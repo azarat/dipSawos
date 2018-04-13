@@ -1,12 +1,17 @@
-import numpy as np
+from scipy.io import loadmat
+import matplotlib.pyplot as plt
 
-a = np.array([1, 2, 3])   # Create a rank 1 array
-print(type(a))            # Prints "<class 'numpy.ndarray'>"
-print(a.shape)            # Prints "(3,)"
-print(a[0], a[1], a[2])   # Prints "1 2 3"
-a[0] = 5                  # Change an element of the array
-print(a)                  # Prints "[5, 2, 3]"
+sawdata = loadmat('saw_data.mat')
+data = sawdata['saw_data'][0,0]['KK3JPF'][0,0]['TE55'][0,25]
 
-b = np.array([[1,2,3],[4,5,6]])    # Create a rank 2 array
-print(b.shape)                     # Prints "(2, 3)"
-print(b[0, 0], b[0, 1], b[1, 0])   # Prints "1 2 4"
+t = range(0, len(data))
+
+fig, ax = plt.subplots()
+ax.plot(t, data * 27.211 * 1000)
+# ax.legend()
+
+ax.set(xlabel='time (s)', ylabel='T (eV or a.u.)',
+       title='JET tokamat temperature evolution, Raw data, 55 channel, 25 discharge')
+ax.grid()
+
+plt.show()
