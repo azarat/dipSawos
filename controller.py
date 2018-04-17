@@ -51,10 +51,11 @@ class dataPreparing:
         newTemp = {}
         winList = []
         self.winListNames = [
-            'boxcar', 'triang', 'blackman',
-            'hamming', 'hann', 'bartlett',
-            'flattop', 'parzen', 'bohman',
-            'blackmanharris', 'nuttall', 'barthann'
+            'triang',  # minimum info save
+            'blackmanharris',  # middle info save (maybe best practice)
+            'flattop',  # maximum info save
+            'boxcar', 'blackman', 'hamming', 'hann',
+            'bartlett', 'parzen', 'bohman', 'nuttall', 'barthann'
         ]
 
         for name in self.winListNames:
