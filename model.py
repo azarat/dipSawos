@@ -8,10 +8,10 @@ class loadDB:
     def setTemperature(self, matLabTemperature):
         self.temperature = matLabTemperature
 
-    def loadData(self, discharge, channel, type):
+    def loadData(self, discharge, channel, source):
         sawdata = loadmat('saw_data.mat')
 
-        dataType = 'KK3PPF' if type == 0 else 'KK3JPF'
+        dataType = 'KK3PPF' if source == 'public' else 'KK3JPF'
 
-        self.setTemperature(sawdata['saw_data'][0,0][dataType][0,0]['TE' + str(channel)][0, discharge])
-        self.setTime(sawdata['saw_data'][0,0][dataType][0,0]['TIM' + str(channel)][0, discharge])
+        self.setTemperature(sawdata['saw_data'][0, 0][dataType][0, 0]['TE' + str(channel)][0, discharge])
+        self.setTime(sawdata['saw_data'][0, 0][dataType][0, 0]['TIM' + str(channel)][0, discharge])
