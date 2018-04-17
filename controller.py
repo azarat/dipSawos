@@ -4,16 +4,13 @@ import numpy as np
 from scipy import signal
 
 class dataPreparing:
+    internal_time_original = 0
+    internal_temperature_original = 0
+    internal_time = 0
+    internal_temperature = 0
 
-
-    def setNewTime(self, newTime):
-        self.t = newTime
-
-    def setNewTemp(self, newTemp):
-        self.temperature = newTemp
-
-
-    def filteringCustom(self, time, temp, windowW):
+    def filtering_custom(self, time, temp, windowW):
+        """ !!! Should be removed but I don't want XD """
 
         """ Custom window filtering (problem with output Y scale) """
         newTemp = []
@@ -33,7 +30,8 @@ class dataPreparing:
 
             newTemp.append(integral)
 
-    def filteringSingle(self, time, temp, windowW):
+    def filtering_single(self, time, temp, windowW):
+        """ !!! Should be removed but I don't want XD """
 
         """ Window filtering with single window """
         sig = temp.ravel() * 27 * 1000
@@ -41,38 +39,82 @@ class dataPreparing:
         newTemp = signal.convolve(sig, win, mode='valid') / sum(win)
         newTime = time[0:(len(time) - windowW + 1)]
 
-        self.setNewTime(newTime)
-        self.setNewTemp(newTemp)
+        self.time = newTime
+        self.temperature = newTemp
 
-    def filteringMultiple(self, time, temp, windowW):
+    def filtering_multiple(self, time, temp, windowW):
 
         """ Window filtering with multiple windows """
         newTime = time[0:(len(time) - windowW + 1)]
         sig = temp.ravel() * 27 * 1000
+
         newTemp = {}
         winList = []
-        self.winListNames = ['boxcar', 'triang', 'blackman', 'hamming', 'hann', 'bartlett', 'flattop', 'parzen', 'bohman', 'blackmanharris', 'nuttall', 'barthann']
+        self.winListNames = [
+            'boxcar', 'triang', 'blackman',
+            'hamming', 'hann', 'bartlett',
+            'flattop', 'parzen', 'bohman',
+            'blackmanharris', 'nuttall', 'barthann'
+        ]
+
         for name in self.winListNames:
             winList.append(signal.get_window(name, windowW))
 
         for index, i in enumerate(winList):
-            newTemp.update({self.winListNames[index]: signal.convolve(sig, winList[index], mode='valid') / sum(winList[index])})
+            newTemp.update({
+                self.winListNames[index]:
+                    signal.convolve(sig, winList[index], mode='valid') / sum(winList[index])
+            })
 
-        self.setNewTime(newTime)
-        self.setNewTemp(newTemp)
+        self.time = newTime
+        self.temperature = newTemp
 
-    def getData(self, discharge, channel, source, filterType, windowW):
-        DB = DBModel.loadDB()
-        DB.loadData(discharge, channel, source)
-        time = DB.t
+    def get_data(self, discharge, channel, source, filterType, windowW):
+        DB = DBModel.LoadDB(discharge, channel, source)
+
+        time = DB.time
         temp = DB.temperature
 
-        self.filterSwitcher(filterType, time, temp, windowW)
+        self.time_original = time.ravel()
+        self.temperature_original = temp.ravel() * 27 * 1000
 
+        self.filter_switcher(filterType, time, temp, windowW)
 
-    def filterSwitcher(self, filterType, time, temp, windowW):
-        filterSwitcher = {
-            'custom'    : self.filteringCustom(time, temp, windowW),
-            'single'    : self.filteringSingle(time, temp, windowW),
-            'multiple'  : self.filteringMultiple(time, temp, windowW)
+    def filter_switcher(self, filterType, time, temp, windowW):
+        filter_switcher = {
+            'custom'    : self.filtering_custom(time, temp, windowW),
+            'single'    : self.filtering_single(time, temp, windowW),
+            'multiple'  : self.filtering_multiple(time, temp, windowW)
         }
+
+    @property
+    def time(self):
+        return self.internal_time
+
+    @time.setter
+    def time(self, value):
+        self.internal_time = value
+
+    @property
+    def temperature(self):
+        return self.internal_temperature
+
+    @temperature.setter
+    def temperature(self, value):
+        self.internal_temperature = value
+
+    @property
+    def time_original(self):
+        return self.internal_time_original
+
+    @time_original.setter
+    def time_original(self, value):
+        self.internal_time_original = value
+
+    @property
+    def temperature_original(self):
+        return self.internal_temperature_original
+
+    @temperature_original.setter
+    def temperature_original(self, value):
+        self.internal_temperature_original = value
