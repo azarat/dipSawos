@@ -3,7 +3,8 @@ from math import fabs, floor
 import numpy as np
 from scipy import signal
 
-class dataPreparing:
+
+class DataPreparing:
     internal_time_original = 0
     internal_temperature_original = 0
     internal_time = 0
