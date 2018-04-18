@@ -16,9 +16,10 @@ for index, name in enumerate(data.winListNames):
 
 ax.plot(data.time_original, data.temperature_original - 1000, label='original')
 
-ax.set(xlabel='time (s)', ylabel='T (eV or a.u.)',
-       title='JET tokamat temperature evolution, Raw data, 55 channel, 25 discharge')
+ax.set(xlabel='time (s)', ylabel='T (eV with shifts)',
+       title='JET tokamat temperature evolution, 55 channel, 25 discharge, wind. width 81')
 ax.grid()
 
 plt.legend()
-plt.show()
+# plt.show()
+fig.savefig('results/filters/d25_c55_w81.png')
