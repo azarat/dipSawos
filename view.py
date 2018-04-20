@@ -1,7 +1,10 @@
 import controller as dt
 import matplotlib.pyplot as plt
 import numpy as np
+from operator import itemgetter
 
+from matplotlib import cm
+from matplotlib.ticker import LinearLocator, FormatStrFormatter
 
 class ViewData:
 
@@ -13,7 +16,7 @@ class ViewData:
         """
 
         data = dt.DataPreparing()
-        data.get_data(discharge=25, channel=55, source='real', filterType='multiple', windowW=81)
+        data.get_data(discharge=25, channel=55, source='real', filterType='multiple', window_width=81, window_name='')
 
         print(data.winListNames)
 
@@ -42,7 +45,7 @@ class ViewData:
         """
 
         data = dt.DataPreparing()
-        data.get_data(discharge=25, channel=55, source='real', filterType='multiple', windowW=81)
+        data.get_data(discharge=25, channel=55, source='real', filterType='multiple', window_width=81, window_name='')
 
         """
         WARNING: Data manipulations below should be moved to controller
@@ -87,3 +90,164 @@ class ViewData:
         plt.show()
         # fig.savefig('results/filters/compare_wind_funcs_d25_c55_w81.png')
 
+    def get_single_filtered_plot(self):
+
+        """
+        Singe plot with one of window func
+
+        triang          # minimum info save
+        blackmanharris  # middle info save
+        flattop         # maximum info save
+        'boxcar', 'blackman', 'hamming', 'hann',
+        'bartlett', 'parzen', 'bohman', 'nuttall', 'barthann'
+        """
+
+        data = dt.DataPreparing()
+        data.get_data(discharge=25, channel=55, source='real', filterType='single', window_width=81, window_name='triang')
+
+        fig, ax = plt.subplots()
+        fig.set_size_inches(15, 8)
+
+        ax.plot(data.time, data.temperature)
+
+        ax.set(xlabel='time (s)', ylabel='T (eV with shifts)',
+               title='JET tokamat temperature evolution, 55 channel, 25 discharge, wind. width 81')
+        ax.grid()
+
+        plt.show()
+        # fig.savefig('results/filters/d25_c55_w81.png')
+
+    def get_3d_plot(self):
+
+        """
+        3D plot ...
+        """
+
+        channel_from = 1
+        channel_to = 97
+
+        data = dt.DataPreparing3D(discharge=25, channel=(channel_from, channel_to),
+                                  source='public', window_width=81,
+                                  window_name='triang')
+
+        temperature_ordered = []
+
+        # print(data.temperature[1])
+        for channel in sorted(data.channels_pos.items(), key=itemgetter(1)):
+            if channel[0] in range(channel_from, channel_to):
+                temperature_ordered.append(
+                    data.temperature_original[channel[0]]
+                )
+
+        fig = plt.figure()
+        ax = fig.gca(projection='3d')
+
+        # Make data.
+        X = np.arange(0, len(temperature_ordered[1]))
+        Y = np.arange(0, len(temperature_ordered))
+        X, Y = np.meshgrid(X, Y)
+        Z = np.array(temperature_ordered)
+
+        # print(len(temperature_ordered[1]))
+        # print(len(temperature_ordered))
+
+        # Plot the surface.
+        surf = ax.plot_surface(X, Y, Z, cmap=cm.coolwarm,
+                               linewidth=0, antialiased=False)
+
+        # Customize the z axis.
+        # ax.set_zlim(0.0, 0.5)
+        ax.zaxis.set_major_locator(LinearLocator(10))
+        ax.zaxis.set_major_formatter(FormatStrFormatter('%.02f'))
+
+        # Add a color bar which maps values to colors.
+        fig.colorbar(surf, shrink=0.5, aspect=5)
+
+        plt.show()
+
+    def get_2d_plot_ordered_by_rmaj(self):
+
+        """
+        get_2d_plot_ordered_by_rmaj ...
+        """
+
+        channel_from = 1
+        channel_to = 97
+        window_width_val = 81
+
+        data = dt.DataPreparing3D(discharge=25, channel=(channel_from, channel_to),
+                                  source='real', window_width=window_width_val,
+                                  window_name='')
+
+        data_public = dt.DataPreparing3D(discharge=25, channel=(channel_from, channel_to),
+                                  source='public', window_width=window_width_val,
+                                  window_name='')
+
+        fig, ax = plt.subplots()
+        fig.set_size_inches(15, 8)
+
+        # # # # # # # # # # # # # # # # # # # # # # # #
+        # Calibrate
+        calibrate_temperature = []
+        for channel in range(channel_from, channel_to):
+            average_ECE = sum(data.temperature_original[channel][0:window_width_val - 1]) / window_width_val
+            calibrate_temperature.append(
+                data.temperature_original[channel] * data_public.temperature_original[channel][0] / average_ECE
+            )
+
+        # # # # # # # # # # # # # # # # # # # # # # # #
+        # Ordering
+        temperature_ordered = []
+        r_maj = []
+
+        for index, channel in enumerate(sorted(data.channels_pos.items(), key=itemgetter(1))):
+            # print(index, channel[0], channel[1])
+            if channel[0] in range(channel_from, channel_to - 1):
+                r_maj.append(
+                    channel[1]
+                )
+                temperature_ordered.append(
+                    calibrate_temperature[channel[0]]
+                )
+
+        # # # # # # # # # # # # # # # # # # # # # # # #
+        # dictlist = []
+        # for key, value in data.temperature_original.items():
+        #     dictlist.append(value)
+
+        # # # # # # # # # # # # # # # # # # # # # # # #
+        # Logic tests
+        ax.plot(
+            range(0, len(temperature_ordered[47])),
+            temperature_ordered[47]
+        )
+
+        # # # # # # # # # # # # # # # # # # # # # # # #
+        # Logic tests
+        # temp_by_r = []
+        # for k in range(0, len(temperature_ordered)):
+        #     temp_by_r.append(temperature_ordered[k][10])
+        #
+        # ax.plot(
+        #     r_maj,
+        #     temp_by_r
+        # )
+
+        # # # # # # # # # # # # # # # # # # # # # # # #
+        # WORKING AREA
+        # print(len(np.transpose(temperature_ordered)))
+        # for index, temp in enumerate(np.transpose(temperature_ordered)):
+        #     # if index in range(0, 100, 2):
+        #     if index in range(0, 4000, 100):
+        #         ax.plot(
+        #             range(0, len(temp)),
+        #             # r_maj,
+        #             temp
+        #         )
+
+        ax.set(xlabel='time (s)', ylabel='T (eV)',
+               title='JET tokamat temperature evolution')
+        ax.grid()
+
+        plt.show()
+        # fig.savefig('results/filters/d25_c55_w81.png')
