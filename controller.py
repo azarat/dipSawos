@@ -1,7 +1,10 @@
-import model as DBModel
+import model as db_model
 from math import fabs, floor
 import numpy as np
+from operator import itemgetter
+
 from scipy import signal
+from scipy import signal as signal_processor
 
 
 class DataPreparing:
@@ -78,7 +81,7 @@ class DataPreparing:
         self.temperature = newTemp
 
     def get_data(self, discharge, channel, source, filterType, window_width, window_name):
-        DB = DBModel.LoadDB(discharge, channel, source)
+        DB = db_model.LoadDB(discharge, channel, source)
 
         time = DB.time
         temp = DB.temperature
@@ -135,7 +138,7 @@ class DataPreparingMulti(DataPreparing):
     """
 
     def __init__(self, discharge, channel, source, window_width, window_name):
-        DB = DBModel.LoadDB(discharge, channel, source)
+        DB = db_model.LoadDB(discharge, channel, source)
 
         time = DB.time
         temp = DB.temperature
@@ -158,37 +161,65 @@ class DataPreparingMulti(DataPreparing):
         self.temperature = new_temp
 
 
-class DataPreparing3D(DataPreparing):
+class Profiling(DataPreparing):
     internal_channels_pos = 0
 
     """
     Change some logic
     """
 
-    def __init__(self, discharge, channel, source, window_width, window_name):
-        DB = DBModel.LoadDB(discharge, channel, source)
+    def __init__(self, discharge, channel, source):
+        db = db_model.LoadDB(discharge, channel, source)
 
-        time = DB.time
-        temp = DB.temperature
+        self.channels_pos = db.channels
+        self.time_original = db.time
+        self.temperature_original = db.temperature
 
-        self.channels_pos = DB.channels
-        self.time_original = time
-        self.temperature_original = temp
+    @staticmethod
+    def filter(input_signal, window_width, window_name):
+        window = signal_processor.get_window(window_name, window_width)
+        output_signal = {}
 
-        if window_name:
-            self.filter_3d(temp, window_width, window_name)
-
-    def filter_3d(self, sig, window_width, window_name_val):
-
-        win = signal.get_window(window_name_val, window_width)
-        new_temp = {}
-
-        for key, temp in sig.items():
-            new_temp.update({
-                key: signal.convolve(temp, win, mode='valid') / sum(win)
+        for channel, temperature in input_signal.items():
+            output_signal.update({
+                channel: signal.convolve(temperature, window, mode='valid') / sum(window)
             })
 
-        self.temperature = new_temp
+        return output_signal
+
+    @staticmethod
+    def dict_to_list(dict_array):
+        return [value for key, value in dict_array.items()]
+
+    @staticmethod
+    def list_to_dict(list_array):
+        return {i: k for i, k in enumerate(list_array)}
+
+    def order_by_r_maj(self, temperature_list_to_order, channel_from, channel_to):
+        temperature_ordered_list = []
+
+        for index, channel in enumerate(sorted(self.channels_pos.items(), key=itemgetter(1))):
+            if channel[0] in range(channel_from, channel_to - 1):
+                temperature_ordered_list.append(
+                    temperature_list_to_order[channel[0]]
+                )
+
+        return temperature_ordered_list
+
+    @staticmethod
+    def calibrate(temperature_list_to_calibrate, public_temperature, window_width, public_window_width, channel_from, channel_to):
+        calibrate_temperature_list = {}
+
+        # print(temperature_list_to_calibrate)
+        for channel in range(channel_from - 1, channel_to - 2):
+            average_ece = sum(temperature_list_to_calibrate[channel][0:window_width - 1]) / window_width
+            public_average_ece = sum(public_temperature[channel][0:public_window_width - 1]) / public_window_width
+
+            calibrate_temperature_list.update({
+                channel: temperature_list_to_calibrate[channel] * public_average_ece / average_ece
+            })
+
+        return calibrate_temperature_list
 
     @property
     def channels_pos(self):

@@ -36,8 +36,8 @@ class LoadDB:
             self.time = time_temp
 
         else:
-            self.temperature = sawdata['saw_data'][0, 0][dataType][0, 0]['TE' + str(channel)][0, discharge]
-            self.time = sawdata['saw_data'][0, 0][dataType][0, 0]['TIM' + str(channel)][0, discharge]
+            self.temperature = sawdata['saw_data'][0, 0][dataType][0, 0]['TE' + str("{:0>2d}".format(channel))][0, discharge]
+            self.time = sawdata['saw_data'][0, 0][dataType][0, 0]['TIM' + str("{:0>2d}".format(channel))][0, discharge]
 
     @property
     def channels(self):

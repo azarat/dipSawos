@@ -126,9 +126,8 @@ class ViewData:
         channel_from = 1
         channel_to = 97
 
-        data = dt.DataPreparing3D(discharge=25, channel=(channel_from, channel_to),
-                                  source='public', window_width=81,
-                                  window_name='triang')
+        data = dt.Profiling(discharge=25, channel=(channel_from, channel_to),
+                            source='public')
 
         temperature_ordered = []
 
@@ -169,85 +168,88 @@ class ViewData:
 
         """
         get_2d_plot_ordered_by_rmaj ...
+        I think here will be the main program
         """
+
+        fig, axes = plt.subplots(2, 1)
+        fig.set_size_inches(15, 8)
 
         channel_from = 1
         channel_to = 97
-        window_width_val = 81
+        window_width_val = 101
+        public_window_width_val = 10
 
-        data = dt.DataPreparing3D(discharge=25, channel=(channel_from, channel_to),
-                                  source='real', window_width=window_width_val,
-                                  window_name='')
+        # # # # # # # # # # # # # # # # # # # # # # # #
+        # Extract data from MATLAB database
+        data = dt.Profiling(discharge=25, channel=(channel_from, channel_to),
+                            source='real')
+        data_public = dt.Profiling(discharge=25, channel=(channel_from, channel_to),
+                                   source='public')
 
-        data_public = dt.DataPreparing3D(discharge=25, channel=(channel_from, channel_to),
-                                  source='public', window_width=window_width_val,
-                                  window_name='')
-
-        fig, ax = plt.subplots()
-        fig.set_size_inches(15, 8)
+        # # # # # # # # # # # # # # # # # # # # # # # #
+        # Ordering by R_maj
+        temperature_ordered_list = data.order_by_r_maj(
+            data.temperature_original,
+            channel_from, channel_to)
+        public_temperature_ordered_list = data.order_by_r_maj(
+            data_public.temperature_original,
+            channel_from, channel_to)
 
         # # # # # # # # # # # # # # # # # # # # # # # #
         # Calibrate
-        calibrate_temperature = []
-        for channel in range(channel_from, channel_to):
-            average_ECE = sum(data.temperature_original[channel][0:window_width_val - 1]) / window_width_val
-            calibrate_temperature.append(
-                data.temperature_original[channel] * data_public.temperature_original[channel][0] / average_ECE
-            )
+        calibrate_temperature_list = data.calibrate(
+            temperature_ordered_list, public_temperature_ordered_list,
+            window_width_val, public_window_width_val,
+            channel_from, channel_to)
 
         # # # # # # # # # # # # # # # # # # # # # # # #
-        # Ordering
-        temperature_ordered = []
-        r_maj = []
-
-        for index, channel in enumerate(sorted(data.channels_pos.items(), key=itemgetter(1))):
-            # print(index, channel[0], channel[1])
-            if channel[0] in range(channel_from, channel_to - 1):
-                r_maj.append(
-                    channel[1]
-                )
-                temperature_ordered.append(
-                    calibrate_temperature[channel[0]]
-                )
+        # Filtering T(t), i.e., smoothing
+        temperature_list = data.filter(
+            calibrate_temperature_list, window_width_val, 'triang')
 
         # # # # # # # # # # # # # # # # # # # # # # # #
-        # dictlist = []
-        # for key, value in data.temperature_original.items():
-        #     dictlist.append(value)
+        # Filtering T(r_maj) WARNING: lose too many info
+        # temperature_list = data.dict_to_list(temperature_list)
+        # temperature_list_transpose = data.list_to_dict(np.transpose(temperature_list))
+        # temperature_list = data.filter(temperature_list_transpose, 20, 'triang')
 
         # # # # # # # # # # # # # # # # # # # # # # # #
-        # Logic tests
-        ax.plot(
-            range(0, len(temperature_ordered[47])),
-            temperature_ordered[47]
-        )
-
-        # # # # # # # # # # # # # # # # # # # # # # # #
-        # Logic tests
-        # temp_by_r = []
-        # for k in range(0, len(temperature_ordered)):
-        #     temp_by_r.append(temperature_ordered[k][10])
-        #
-        # ax.plot(
-        #     r_maj,
-        #     temp_by_r
+        # LOGIC TEST. Build single plot T(t) with fixed r_maj
+        # !!! CAUTION: inverting plasma radius is near 48 channel
+        # channel_to_check = 27
+        # axes[0].plot(
+        #     range(0, len(temperature_list[channel_to_check])),
+        #     temperature_list[channel_to_check]
         # )
 
         # # # # # # # # # # # # # # # # # # # # # # # #
-        # WORKING AREA
-        # print(len(np.transpose(temperature_ordered)))
-        # for index, temp in enumerate(np.transpose(temperature_ordered)):
-        #     # if index in range(0, 100, 2):
-        #     if index in range(0, 4000, 100):
-        #         ax.plot(
-        #             range(0, len(temp)),
-        #             # r_maj,
-        #             temp
-        #         )
+        # WORKING AREA. Build multiple plots T(r_maj)
+        # with various fixed time
+        r_maj = [channel[1] for channel in sorted(data.channels_pos.items(), key=itemgetter(1))]
+        temperature_list = data.dict_to_list(temperature_list)
 
-        ax.set(xlabel='time (s)', ylabel='T (eV)',
+        for time, temperature in enumerate(np.transpose(temperature_list)):
+            if time in range(0, 4000, 100):
+                axes[0].plot(
+                    r_maj[0:80],
+                    # range(0, len(temperature[0:80])),
+                    temperature[0:80]
+                )
+
+        for time, temperature in enumerate(np.transpose(public_temperature_ordered_list)):
+            if time in range(0, 100, 2):
+                axes[1].plot(
+                    r_maj[0:80],
+                    # range(0, len(temperature[0:80])),
+                    temperature[0:80]
+                )
+        # # # # # # # # # # # # # # # # # # # # # # # #
+
+        axes[0].set(ylabel='T (eV)',
                title='JET tokamat temperature evolution')
-        ax.grid()
+        axes[1].set(xlabel='R maj (num order only)', ylabel='T (eV)')
+        axes[0].grid()
+        axes[1].grid()
 
         plt.show()
         # fig.savefig('results/filters/d25_c55_w81.png')
