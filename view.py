@@ -3,152 +3,96 @@ import matplotlib.pyplot as plt
 import numpy as np
 from operator import itemgetter
 
+# IMPORTANT to be declared for 3d plots
+from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
 from matplotlib.ticker import LinearLocator, FormatStrFormatter
 
+
 class ViewData:
 
-    def show_filtered_plots(self):
+    def __init__(self):
 
         """
-        Just show list of plots with window filtering
-        I like triang, blackmanharris, flattop windows
+        I think here will be the main program
         """
 
-        data = dt.DataPreparing()
-        data.get_data(discharge=25, channel=55, source='real', filterType='multiple', window_width=81, window_name='')
+        channel_from = 1
+        channel_to = 97
+        window_width_val = 101
+        public_window_width_val = 10
 
-        print(data.winListNames)
+        """ Extract data from MATLAB database """
+        self.processing = dt.PreProfiling()
+        data = dt.Profiling(discharge=25, channel=(channel_from, channel_to),
+                            source='real')
+        data_public = dt.Profiling(discharge=25, channel=(channel_from, channel_to),
+                                   source='public')
+        # # # # # # # # # # # # # # # # # # # # # # # #
 
-        fig, ax = plt.subplots()
-        for index, name in enumerate(data.winListNames):
-            if name in ['hamming', 'barthann', 'bartlett',
-                        'hann', 'nuttall', 'parzen',
-                        'boxcar', 'bohman', 'blackman']:
-                continue
-            ax.plot(data.time, data.temperature[name] + (index * 200), label=name)
+        """ Ordering by R_maj """
+        temperature_ordered_list = data.order_by_r_maj(
+            data.temperature_original,
+            channel_from, channel_to)
+        public_temperature_ordered_list = data.order_by_r_maj(
+            data_public.temperature_original,
+            channel_from, channel_to)
+        # # # # # # # # # # # # # # # # # # # # # # # #
 
-        ax.plot(data.time_original, data.temperature_original - 1000, label='original')
+        """ 
+        Show difference, in %, between 
+        original T(t) and smoothed, i.e., filtered T(t)
+        with different window functions
+        """
+        # self.info_losses_wind_func(temperature_ordered_list, data.winListNames, 47)
+        # # # # # # # # # # # # # # # # # # # # # # # #
 
-        ax.set(xlabel='time (s)', ylabel='T (eV with shifts)',
-               title='JET tokamat temperature evolution, 55 channel, 25 discharge, wind. width 81')
-        ax.grid()
-
-        plt.legend()
-        plt.show()
-        # fig.savefig('results/filters/d25_c55_w81.png')
-
-    def info_losses_wind_func(self):
+        """ Calibrate """
+        calibrate_temperature_list = data.calibrate(
+            temperature_ordered_list, public_temperature_ordered_list,
+            window_width_val, public_window_width_val,
+            channel_from, channel_to)
+        # # # # # # # # # # # # # # # # # # # # # # # #
 
         """
-        Compare all types of window function
-        """
-
-        data = dt.DataPreparing()
-        data.get_data(discharge=25, channel=55, source='real', filterType='multiple', window_width=81, window_name='')
-
-        """
-        WARNING: Data manipulations below should be moved to controller
-        """
-        analyze_window = data.winListNames
-        filtered_temp_size, cut_time, cut_temp_original = ({} for i in range(3))
-        sum_deviation = []
-
-        for index, name in enumerate(analyze_window):
-
-            filtered_temp_size.update({
-                name: len(data.temperature[name])
-            })
-            cut_time.update({
-                name: data.time[0:filtered_temp_size[name]]
-            })
-            cut_temp_original.update({
-                name: data.temperature_original[0:filtered_temp_size[name]]
-            })
-            sum_deviation_array = np.fabs((cut_temp_original[name] / data.temperature[name]) - 1)
-            sum_deviation.append(
-                (np.sum(sum_deviation_array) / len(sum_deviation_array)) * 100,
-            )
-            # print(str(name) + ': ' + str(sum_deviation[name]))
-
-        """ Plot compare deviation """
-        fig, ax = plt.subplots()
-        fig.set_size_inches(15, 8)
-
-        y_pos = np.arange(len(analyze_window))
-        performance = sum_deviation
-
-        ax.barh(y_pos, performance)
-        ax.set_yticks(y_pos)
-        ax.set_yticklabels(analyze_window)
-
-        ax.set(xlabel='Losses in %', ylabel='Window type',
-               title='Loss of info, 55 channel, 25 discharge, wind. width 81')
-        ax.grid()
-        ax.set_xlim(left=2.2)
-
-        plt.show()
-        # fig.savefig('results/filters/compare_wind_funcs_d25_c55_w81.png')
-
-    def get_single_filtered_plot(self):
-
-        """
-        Singe plot with one of window func
-
+        Filtering T(t), i.e., smoothing 
         triang          # minimum info save
         blackmanharris  # middle info save
         flattop         # maximum info save
         'boxcar', 'blackman', 'hamming', 'hann',
         'bartlett', 'parzen', 'bohman', 'nuttall', 'barthann'
         """
+        temperature_list = self.processing.filter(
+            calibrate_temperature_list, window_width_val, 'triang')
+        # # # # # # # # # # # # # # # # # # # # # # # #
 
-        data = dt.DataPreparing()
-        data.get_data(discharge=25, channel=55, source='real', filterType='single', window_width=81, window_name='triang')
+        """ Filtering T(r_maj) WARNING: lose too many info """
+        # temperature_list = self.processing.dict_to_list(temperature_list)
+        # temperature_list_transpose = self.processing.list_to_dict(np.transpose(temperature_list))
+        # temperature_list = self.processing.filter(temperature_list_transpose, 20, 'triang')
+        # # # # # # # # # # # # # # # # # # # # # # # #
 
-        fig, ax = plt.subplots()
-        fig.set_size_inches(15, 8)
+        """ Singe plot with one of window func """
+        # self.build_temperature_rmaj_single_plot(temperature_list[27])
+        # # # # # # # # # # # # # # # # # # # # # # # #
 
-        ax.plot(data.time, data.temperature)
+        r_maj = [channel[1] for channel in sorted(data.channels_pos.items(), key=itemgetter(1))]
+        temperature_list = self.processing.dict_to_list(temperature_list)
 
-        ax.set(xlabel='time (s)', ylabel='T (eV with shifts)',
-               title='JET tokamat temperature evolution, 55 channel, 25 discharge, wind. width 81')
-        ax.grid()
+        self.build_temperature_rmaj_series_plot(temperature_list, public_temperature_ordered_list, r_maj)
+        # self.build_temperature_rmaj_time_3d_surface(temperature_list, r_maj)
 
-        plt.show()
-        # fig.savefig('results/filters/d25_c55_w81.png')
-
-    def get_3d_plot(self):
-
-        """
-        3D plot ...
-        """
-
-        channel_from = 1
-        channel_to = 97
-
-        data = dt.Profiling(discharge=25, channel=(channel_from, channel_to),
-                            source='public')
-
-        temperature_ordered = []
-
-        # print(data.temperature[1])
-        for channel in sorted(data.channels_pos.items(), key=itemgetter(1)):
-            if channel[0] in range(channel_from, channel_to):
-                temperature_ordered.append(
-                    data.temperature_original[channel[0]]
-                )
-
+    def build_temperature_rmaj_time_3d_surface(self, temperature_list, r_maj):
         fig = plt.figure()
         ax = fig.gca(projection='3d')
 
         # Make data.
-        X = np.arange(0, len(temperature_ordered[1]))
-        Y = np.arange(0, len(temperature_ordered))
+        # print(len(temperature_list))
+        # print(len(r_maj))
+        X = np.arange(0, len(temperature_list[1]))
+        Y = r_maj[0:len(r_maj) - 1]
         X, Y = np.meshgrid(X, Y)
-        Z = np.array(temperature_ordered)
-
-        # print(len(temperature_ordered[1]))
-        # print(len(temperature_ordered))
+        Z = np.array(temperature_list)
 
         # Plot the surface.
         surf = ax.plot_surface(X, Y, Z, cmap=cm.coolwarm,
@@ -160,74 +104,37 @@ class ViewData:
         ax.zaxis.set_major_formatter(FormatStrFormatter('%.02f'))
 
         # Add a color bar which maps values to colors.
-        fig.colorbar(surf, shrink=0.5, aspect=5)
+        fig.colorbar(surf)
 
         plt.show()
 
-    def get_2d_plot_ordered_by_rmaj(self):
+    def build_temperature_rmaj_single_plot(self, temperature):
+        # # # # # # # # # # # # # # # # # # # # # # # #
+        # LOGIC TEST. Build single plot T(t) with fixed r_maj
+        # !!! CAUTION: inverting plasma radius is near 48 channel
+        # CAUTION: channel_to_check means temperature set, ordered by r_maj
+        fig, axes = plt.subplots()
+        fig.set_size_inches(15, 8)
 
-        """
-        get_2d_plot_ordered_by_rmaj ...
-        I think here will be the main program
-        """
+        axes.plot(
+            range(0, len(temperature)),
+            temperature
+        )
+
+        axes.set(xlabel='R maj (num order only)', ylabel='T (eV)',
+                 title='JET tokamat temperature evolution')
+        axes.grid()
+
+        plt.show()
+
+    def build_temperature_rmaj_series_plot(self, temperature_list, public_temperature_ordered_list, r_maj):
 
         fig, axes = plt.subplots(2, 1)
         fig.set_size_inches(15, 8)
 
-        channel_from = 1
-        channel_to = 97
-        window_width_val = 101
-        public_window_width_val = 10
-
-        # # # # # # # # # # # # # # # # # # # # # # # #
-        # Extract data from MATLAB database
-        data = dt.Profiling(discharge=25, channel=(channel_from, channel_to),
-                            source='real')
-        data_public = dt.Profiling(discharge=25, channel=(channel_from, channel_to),
-                                   source='public')
-
-        # # # # # # # # # # # # # # # # # # # # # # # #
-        # Ordering by R_maj
-        temperature_ordered_list = data.order_by_r_maj(
-            data.temperature_original,
-            channel_from, channel_to)
-        public_temperature_ordered_list = data.order_by_r_maj(
-            data_public.temperature_original,
-            channel_from, channel_to)
-
-        # # # # # # # # # # # # # # # # # # # # # # # #
-        # Calibrate
-        calibrate_temperature_list = data.calibrate(
-            temperature_ordered_list, public_temperature_ordered_list,
-            window_width_val, public_window_width_val,
-            channel_from, channel_to)
-
-        # # # # # # # # # # # # # # # # # # # # # # # #
-        # Filtering T(t), i.e., smoothing
-        temperature_list = data.filter(
-            calibrate_temperature_list, window_width_val, 'triang')
-
-        # # # # # # # # # # # # # # # # # # # # # # # #
-        # Filtering T(r_maj) WARNING: lose too many info
-        # temperature_list = data.dict_to_list(temperature_list)
-        # temperature_list_transpose = data.list_to_dict(np.transpose(temperature_list))
-        # temperature_list = data.filter(temperature_list_transpose, 20, 'triang')
-
-        # # # # # # # # # # # # # # # # # # # # # # # #
-        # LOGIC TEST. Build single plot T(t) with fixed r_maj
-        # !!! CAUTION: inverting plasma radius is near 48 channel
-        # channel_to_check = 27
-        # axes[0].plot(
-        #     range(0, len(temperature_list[channel_to_check])),
-        #     temperature_list[channel_to_check]
-        # )
-
         # # # # # # # # # # # # # # # # # # # # # # # #
         # WORKING AREA. Build multiple plots T(r_maj)
         # with various fixed time
-        r_maj = [channel[1] for channel in sorted(data.channels_pos.items(), key=itemgetter(1))]
-        temperature_list = data.dict_to_list(temperature_list)
-
         for time, temperature in enumerate(np.transpose(temperature_list)):
             if time in range(0, 4000, 100):
                 axes[0].plot(
@@ -253,3 +160,45 @@ class ViewData:
 
         plt.show()
         # fig.savefig('results/filters/d25_c55_w81.png')
+
+    def info_losses_wind_func(self, temperature_original, analyze_window, channel_to_compare):
+
+        """
+        Compare all types of window function
+
+        WARNING: Data manipulations below should be moved to controller
+        """
+        sum_deviation = []
+
+        for index, name in enumerate(analyze_window):
+
+            filtered_temperature = self.processing.list_to_dict(temperature_original)
+            filtered_temperature = self.processing.filter(filtered_temperature, 81, name)
+            filtered_temperature = self.processing.dict_to_list(filtered_temperature)[channel_to_compare]
+
+            filtered_temperature_size = len(filtered_temperature)
+            cut_temperature_original = temperature_original[channel_to_compare][0:filtered_temperature_size]
+
+            sum_deviation_array = np.fabs((cut_temperature_original / filtered_temperature) - 1)
+            sum_deviation.append(
+                (np.sum(sum_deviation_array) / len(sum_deviation_array)) * 100,
+            )
+
+        """ Plot compare deviation """
+        fig, ax = plt.subplots()
+        fig.set_size_inches(15, 8)
+
+        y_pos = np.arange(len(analyze_window))
+        performance = sum_deviation
+
+        ax.barh(y_pos, performance)
+        ax.set_yticks(y_pos)
+        ax.set_yticklabels(analyze_window)
+
+        ax.set(xlabel='Losses in %', ylabel='Window type',
+               title='Loss of info, 55 channel, 25 discharge, wind. width 81')
+        ax.grid()
+        ax.set_xlim(left=2.2)
+
+        plt.show()
+        # fig.savefig('results/filters/compare_wind_funcs_d25_c55_w81.png')
