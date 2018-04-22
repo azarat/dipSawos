@@ -1,6 +1,7 @@
 import model as db_model
 from operator import itemgetter
 from scipy import signal as signal_processor
+import numpy as np
 
 
 class DataPreparing:
@@ -97,3 +98,23 @@ class PreProfiling:
     @staticmethod
     def list_to_dict(list_array):
         return {i: k for i, k in enumerate(list_array)}
+
+    def calculate_deviation(self, window_width, temperature_original, analyze_window, channel_to_compare):
+        sum_deviation = []
+
+        for index, name in enumerate(analyze_window):
+
+            filtered_temperature = self.list_to_dict(temperature_original)
+            filtered_temperature = self.filter(filtered_temperature, window_width, name)
+            filtered_temperature = self.dict_to_list(filtered_temperature)[channel_to_compare]
+
+            filtered_temperature_size = len(filtered_temperature)
+            cut_temperature_original = temperature_original[channel_to_compare][0:filtered_temperature_size]
+
+            sum_deviation_array = np.fabs((cut_temperature_original / filtered_temperature) - 1)
+            sum_deviation.append(
+                (np.sum(sum_deviation_array) / len(sum_deviation_array)) * 100,
+            )
+
+        return sum_deviation
+
