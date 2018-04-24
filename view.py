@@ -92,7 +92,8 @@ class ViewData:
 
         plt.show()
 
-    def build_temperature_rmaj_time_3d_surface(self, temperature_list, r_maj):
+    @staticmethod
+    def build_temperature_rmaj_time_3d_surface(temperature_list, r_maj):
         fig = plt.figure()
         ax = fig.gca(projection='3d')
 
@@ -116,7 +117,8 @@ class ViewData:
 
         return 1
 
-    def build_temperature_rmaj_single_plot(self, temperature):
+    @staticmethod
+    def build_temperature_rmaj_single_plot(temperature):
 
         """
         Build single plot T(t) with fixed r_maj
@@ -138,7 +140,8 @@ class ViewData:
 
         return 1
 
-    def build_temperature_rmaj_series_plot(self, temperature_list, public_temperature_ordered_list, r_maj):
+    @staticmethod
+    def build_temperature_rmaj_series_plot(temperature_list, public_temperature_ordered_list, r_maj):
 
         """
         Build multiple plots T(r_maj)

@@ -2,4 +2,4 @@
 
 ― Richard Feynman
 
-ATTENTION: this is draft code, complete program program will be later.
+CAUTION: here is draft code, complete program will be later.
