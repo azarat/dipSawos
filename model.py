@@ -9,7 +9,7 @@ class LoadDB:
     def __init__(self, discharge, channel, source):
         sawdata = loadmat('saw_data.mat')
 
-        dataType = 'KK3PPF' if source == 'public' else 'KK3JPF'
+        data_type = 'KK3PPF' if source == 'public' else 'KK3JPF'
 
         channels_temp = {}
 
@@ -26,18 +26,18 @@ class LoadDB:
 
             for i in range(channel[0], channel[1]):
                 temperature_temp.update({
-                    i: sawdata['saw_data'][0, 0][dataType][0, 0]['TE' + str("{:0>2d}".format(i))][0, discharge].ravel()
+                    i: sawdata['saw_data'][0, 0][data_type][0, 0]['TE' + str("{:0>2d}".format(i))][0, discharge].ravel()
                 })
                 time_temp.update({
-                    i: sawdata['saw_data'][0, 0][dataType][0, 0]['TIM' + str("{:0>2d}".format(i))][0, discharge].ravel()
+                    i: sawdata['saw_data'][0, 0][data_type][0, 0]['TIM' + str("{:0>2d}".format(i))][0, discharge].ravel()
                 })
 
             self.temperature = temperature_temp
             self.time = time_temp
 
         else:
-            self.temperature = sawdata['saw_data'][0, 0][dataType][0, 0]['TE' + str("{:0>2d}".format(channel))][0, discharge]
-            self.time = sawdata['saw_data'][0, 0][dataType][0, 0]['TIM' + str("{:0>2d}".format(channel))][0, discharge]
+            self.temperature = sawdata['saw_data'][0, 0][data_type][0, 0]['TE' + str("{:0>2d}".format(channel))][0, discharge]
+            self.time = sawdata['saw_data'][0, 0][data_type][0, 0]['TIM' + str("{:0>2d}".format(channel))][0, discharge]
 
     @property
     def channels(self):

@@ -30,21 +30,10 @@ class ViewData:
                                    source='public')
         # # # # # # # # # # # # # # # # # # # # # # # #
 
-        """ 
-        CAUTION: for different channels losses could be VERY different
-        so it would be preferable to check losses for each specific case
-        
-        Show difference, in %, between 
-        original T(t) and smoothed, i.e., filtered T(t)
-        with different window functions
-        """
-        # self.info_losses_wind_func(
-        #     channels_pos=data.channels_pos,
-        #     window_width=81,
-        #     temperature_original=data.temperature_original,
-        #     analyze_window=data.winListNames,
-        #     channel_to_compare=22)
-        # # # # # # # # # # # # # # # # # # # # # # # #
+        """ Sort R_maj and time lists by R_maj value """
+        r_maj = [channel[1] for channel in sorted(data.channels_pos.items(), key=itemgetter(1))]
+        channel_order_list = {index: channel[0] for index, channel in enumerate(sorted(data.channels_pos.items(), key=itemgetter(1)))}
+        time_list = [data.time_original[channel[1]] for channel in channel_order_list.items()]
 
         """ Ordering by R_maj """
         temperature_ordered_list = data.order_by_r_maj(
@@ -60,6 +49,23 @@ class ViewData:
             temperature_ordered_list, public_temperature_ordered_list,
             window_width_val, public_window_width_val,
             channel_from, channel_to)
+        # # # # # # # # # # # # # # # # # # # # # # # #
+
+        """ 
+        CAUTION: for different channels losses could be VERy different
+        so it would be preferable to check losses for each specific case
+
+        Show difference, in %, between 
+        original T(t) and smoothed, i.e., filtered T(t)
+        with different window functions
+        """
+        self.info_losses_wind_func(
+            channels_pos=data.channels_pos,
+            window_width=81,
+            temperature_original=calibrate_temperature_list,
+            analyze_window=data.winListNames,
+            channel_to_compare=22,
+            time_list=time_list)
         # # # # # # # # # # # # # # # # # # # # # # # #
 
         """
@@ -81,10 +87,9 @@ class ViewData:
         # # # # # # # # # # # # # # # # # # # # # # # #
 
         """ Singe plot with one of window func """
-        self.build_temperature_rmaj_single_plot(temperature_list[49])
+        # self.build_temperature_rmaj_single_plot(temperature_list[49])
         # # # # # # # # # # # # # # # # # # # # # # # #
 
-        r_maj = [channel[1] for channel in sorted(data.channels_pos.items(), key=itemgetter(1))]
         temperature_list = self.processing.dict_to_list(temperature_list)
 
         # self.build_temperature_rmaj_series_plot(temperature_list, public_temperature_ordered_list, r_maj)
@@ -98,13 +103,13 @@ class ViewData:
         ax = fig.gca(projection='3d')
 
         # Make data.
-        X = np.arange(0, len(temperature_list[1]))
-        Y = r_maj[0:len(r_maj) - 1]
-        X, Y = np.meshgrid(X, Y)
-        Z = np.array(temperature_list)
+        x = np.arange(0, len(temperature_list[1]))
+        y = r_maj[0:len(r_maj) - 1]
+        x, y = np.meshgrid(x, y)
+        z = np.array(temperature_list)
 
         # Plot the surface.
-        surf = ax.plot_surface(X, Y, Z, cmap=cm.coolwarm,
+        surf = ax.plot_surface(x, y, z, cmap=cm.coolwarm,
                                linewidth=0, antialiased=False)
 
         # Customize the z axis.
@@ -183,8 +188,6 @@ class ViewData:
 
         """
         Compare all types of window function
-        Set kwargs['channel_to_compare'] - 1 due to the reset dict indexes
-            during procedure DICT to LIST for temperature_original
         """
 
         temperature_original = kwargs['temperature_original']
@@ -200,7 +203,7 @@ class ViewData:
 
         """ Plot compare deviation """
         fig, axes = plt.subplots(2, 1)
-        fig.set_size_inches(15, 8)
+        fig.set_size_inches(10, 8)
 
         y_pos = np.arange(len(kwargs['analyze_window']))
 
@@ -208,22 +211,33 @@ class ViewData:
         axes[0].set_yticks(y_pos)
         axes[0].set_yticklabels(kwargs['analyze_window'])
 
-        axes[0].set(xlabel='Losses in %', ylabel='Window type',
-                    title='Loss of info, ' + str(kwargs['channel_to_compare'] - 1)
+        axes[0].set(xlabel='RMSD (eV)', ylabel='Window type',
+                    title='Losses of info, ' + str(kwargs['channel_to_compare'])
                           + ' channel, 25 discharge, '
                             'wind. width ' + str(kwargs['window_width']) +
-                          ', R_maj = ' + str(kwargs['channels_pos'][kwargs['channel_to_compare'] - 1]))
+                          ', R_maj = ' + str(kwargs['channels_pos'][kwargs['channel_to_compare']]))
         axes[0].grid()
-        axes[0].set_xlim(left=min(sum_deviation) - .1)
+        axes[0].set_xlim(
+            left=(min(sum_deviation) - min(sum_deviation) / 100),
+            right=(max(sum_deviation) + min(sum_deviation) / 100))
 
         """ Plot compared T(t) """
         axes[1].plot(
-            range(0, len(temperature_original[kwargs['channel_to_compare'] - 1])),
-            temperature_original[kwargs['channel_to_compare'] - 1]
+            # range(0, len(temperature_original[kwargs['channel_to_compare'] - 1])),
+            kwargs['time_list'][kwargs['channel_to_compare']],
+            temperature_original[kwargs['channel_to_compare']]
         )
-        axes[1].set(xlabel='Time (in units)', ylabel='Temperature (eV)',
+        axes[1].set(xlabel='Time (seconds)', ylabel='Temperature (eV)',
                     title='')
+
         axes[1].grid()
+
+        """ Align label position """
+        for ax in axes:
+            label = ax.xaxis.get_label()
+            x_lab_pos, y_lab_pos = label.get_position()
+            label.set_position([1.0, y_lab_pos])
+            label.set_horizontalalignment('right')
 
         # fig.savefig('results/filters/compare_wind_funcs_d25_c55_w81.png')
 

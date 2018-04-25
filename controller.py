@@ -66,7 +66,6 @@ class Profiling(DataPreparing):
     def calibrate(temperature_list_to_calibrate, public_temperature, window_width, public_window_width, channel_from, channel_to):
         calibrate_temperature_list = {}
 
-        # print(temperature_list_to_calibrate)
         for channel in range(channel_from - 1, channel_to - 2):
             average_ece = sum(temperature_list_to_calibrate[channel][0:window_width - 1]) / window_width
             public_average_ece = sum(public_temperature[channel][0:public_window_width - 1]) / public_window_width
@@ -79,6 +78,7 @@ class Profiling(DataPreparing):
 
 
 class PreProfiling:
+
     @staticmethod
     def filter(input_signal, window_width, window_name):
         window = signal_processor.get_window(window_name, window_width)
@@ -100,10 +100,11 @@ class PreProfiling:
         return {i: k for i, k in enumerate(list_array)}
 
     def calculate_deviation(self, window_width, temperature_original, analyze_window, channel_to_compare):
-        sum_deviation = []
+        rmsd = []
 
         for index, name in enumerate(analyze_window):
 
+            """ Prepare data for calculate """
             filtered_temperature = self.list_to_dict(temperature_original)
             filtered_temperature = self.filter(filtered_temperature, window_width, name)
             filtered_temperature = self.dict_to_list(filtered_temperature)[channel_to_compare]
@@ -111,10 +112,11 @@ class PreProfiling:
             filtered_temperature_size = len(filtered_temperature)
             cut_temperature_original = temperature_original[channel_to_compare][0:filtered_temperature_size]
 
-            sum_deviation_array = np.fabs((cut_temperature_original / filtered_temperature) - 1)
-            sum_deviation.append(
-                (np.sum(sum_deviation_array) / len(sum_deviation_array)) * 100,
+            """ Calculate RMSD (Root-Mean-Square Deviation) """
+            rmsd_array = pow(filtered_temperature - cut_temperature_original, 2)
+            rmsd.append(
+                np.sqrt(np.sum(rmsd_array) / len(rmsd_array))
             )
 
-        return sum_deviation
+        return rmsd
 
