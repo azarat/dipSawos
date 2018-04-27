@@ -2,6 +2,9 @@ import controller as dt
 import matplotlib.pyplot as plt
 import numpy as np
 from operator import itemgetter
+import os
+from scipy import signal as signal_processor
+import itertools
 
 # IMPORTANT to be declared for 3d plots
 from mpl_toolkits.mplot3d import Axes3D
@@ -19,9 +22,16 @@ class ViewData:
 
         channel_from = 1
         channel_to = 97
-        window_width_val = 500
+        window_width_val = 81
         public_window_width_val = 10
         window_func = 'triang'
+
+        """ Parameters in which I interested """
+        channel_to_compare = [2, 14, 23, 32, 45, 46, 48, 49, 50, 52, 60]
+        window_to_compare = ['boxcar', 'triang', 'flattop']
+        window_width_to_compare = [81, 200, 400]
+
+
 
         """ Extract data from MATLAB database """
         self.processing = dt.PreProfiling()
@@ -53,18 +63,30 @@ class ViewData:
         # # # # # # # # # # # # # # # # # # # # # # # #
 
         """ 
-        CAUTION: for different channels losses could be VERy different
+        CAUTION: for different channels losses could be VERY different
         so it would be preferable to check losses for each specific case
 
-        Show difference, in %, between 
+        Show difference, in RMSD, between 
         original T(t) and smoothed, i.e., filtered T(t)
         with different window functions
         """
+        # Multiple format
+        # for channel, wind_w in itertools.product(channel_to_compare, window_width_to_compare):
+        #     self.info_losses_wind_func(
+        #         channels_pos=r_maj,
+        #         window_width=wind_w,
+        #         temperature_original=calibrate_temperature_list,
+        #         analyze_window=data.win_list_names,
+        #         channel_to_compare=channel,
+        #         time_list=time_list,
+        #         channel_order_list=channel_order_list)
+        #
+        # Original format
         # self.info_losses_wind_func(
         #     channels_pos=r_maj,
         #     window_width=window_width_val,
         #     temperature_original=calibrate_temperature_list,
-        #     analyze_window=data.winListNames,
+        #     analyze_window=data.win_list_names,
         #     channel_to_compare=60,
         #     time_list=time_list,
         #     channel_order_list=channel_order_list)
@@ -82,6 +104,8 @@ class ViewData:
             calibrate_temperature_list, window_width_val, window_func)
         # # # # # # # # # # # # # # # # # # # # # # # #
 
+        # self.build_filter_windows(data.win_list_names)
+
         """ Filtering T(r_maj) WARNING: lose too many info """
         # temperature_list = self.processing.dict_to_list(temperature_list)
         # temperature_list_transpose = self.processing.list_to_dict(np.transpose(temperature_list))
@@ -89,12 +113,29 @@ class ViewData:
         # # # # # # # # # # # # # # # # # # # # # # # #
 
         """ Singe plot with one of window func """
+        # Multiple format
+        # for channel, wind, wind_w in itertools.product(channel_to_compare, window_to_compare, window_width_to_compare):
+        #
+        #     temperature_list = self.processing.filter(
+        #         calibrate_temperature_list, wind_w, wind)
+        #
+        #     self.build_temperature_rmaj_single_plot(
+        #         temperature=temperature_list,
+        #         temperature_original=calibrate_temperature_list,
+        #         channels_pos=r_maj,
+        #         window_width=wind_w,
+        #         channel_to_compare=channel,
+        #         time_list=time_list,
+        #         channel_order_list=channel_order_list,
+        #         window_name=wind)
+
+        # Original format
         # self.build_temperature_rmaj_single_plot(
         #     temperature=temperature_list,
         #     temperature_original=calibrate_temperature_list,
         #     channels_pos=r_maj,
         #     window_width=window_width_val,
-        #     channel_to_compare=50,
+        #     channel_to_compare=14,
         #     time_list=time_list,
         #     channel_order_list=channel_order_list,
         #     window_name=window_func)
@@ -107,6 +148,33 @@ class ViewData:
         # self.build_temperature_rmaj_time_3d_surface(temperature_list, r_maj)
 
         plt.show()
+
+    @staticmethod
+    def build_filter_windows(wind_list):
+        for index, name in enumerate(wind_list):
+            fig, axes = plt.subplots()
+            fig.set_size_inches(15, 8)
+
+            window = signal_processor.get_window(name, 100)
+
+            axes.plot(
+                range(0, len(window)),
+                window
+            )
+
+            axes.set(xlabel='', ylabel='',
+                     title=name)
+            axes.grid(alpha=0.2)
+            plt.tight_layout()
+
+            directory = 'results/filters/'
+
+            if not os.path.exists(directory):
+                os.makedirs(directory)
+
+            fig.savefig(directory + 'filters_' + name + '.png')
+
+        return 1
 
     @staticmethod
     def build_temperature_rmaj_time_3d_surface(temperature_list, r_maj):
@@ -172,7 +240,14 @@ class ViewData:
 
         self.align_axes(axes)
 
-        fig.savefig('results/filters/single_plots/single_d25_c' +
+        directory = 'results/T_time/d25/' \
+                    'o' + str(channel_to_compare) + \
+                    '_c' + str(channel_order_list[channel_to_compare]) + '/' + \
+                    str(window_name) + '/'
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+
+        fig.savefig(directory + 'single_d25_c' +
                     str(channel_order_list[channel_to_compare]) +
                     '_w' + str(window_width) +
                     '_WF' + window_name +
@@ -230,7 +305,13 @@ class ViewData:
 
         # self.align_axes(axes)
 
-        fig.savefig('results/filters/d25_T_Rmaj_with_labeled_points_c0080_w' + str(window_width) + '.png')
+        directory = 'results/T_Rmaj/d25/'
+
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+
+        fig.savefig(directory + 'd25_T_Rmaj_with_labeled_points_c0080_w' +
+                    str(window_width) + '.png')
 
         return 1
 
@@ -263,7 +344,7 @@ class ViewData:
         axes[0].set_yticklabels(kwargs['analyze_window'])
 
         axes[0].set(xlabel='RMSD (eV)', ylabel='Window type',
-                    title='Losses of info, ' + str(kwargs['channel_order_list'][kwargs['channel_to_compare']])
+                    title='RMSD, ' + str(kwargs['channel_order_list'][kwargs['channel_to_compare']])
                           + ' channel, 25 discharge, '
                             'wind. width ' + str(kwargs['window_width']) +
                           ', R_maj = ' + str(kwargs['channels_pos'][kwargs['channel_to_compare']]))
@@ -289,30 +370,32 @@ class ViewData:
 
         # axes[1].grid()
 
-        self.align_axes(axes)
+        # self.align_axes(axes[0])
+        # self.align_axes(axes[1])
 
-        fig.savefig('results/filters/RMSD/RMSD_d25_c' +
+        directory = 'results/RMSD/d25/' \
+                    'o' + str(kwargs['channel_to_compare']) + \
+                    '_c' + str(kwargs['channel_order_list'][kwargs['channel_to_compare']]) + '/'
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+
+        fig.savefig(directory + 'RMSD_d25_c' +
                     str(kwargs['channel_order_list'][kwargs['channel_to_compare']]) +
                     '_w' + str(kwargs['window_width']) +
                     '.png')
-
         return 1
 
     @staticmethod
     def align_axes(axes):
-        if axes is not list or tuple:
-            axes = [axes]
+        label = axes.xaxis.get_label()
+        x_lab_pos, y_lab_pos = label.get_position()
+        label.set_position([1.0, y_lab_pos])
+        label.set_horizontalalignment('right')
 
-        for ax in axes:
-            label = ax.xaxis.get_label()
-            x_lab_pos, y_lab_pos = label.get_position()
-            label.set_position([1.0, y_lab_pos])
-            label.set_horizontalalignment('right')
-
-            label = ax.yaxis.get_label()
-            x_lab_pos, y_lab_pos = label.get_position()
-            label.set_position([x_lab_pos, .95])
-            label.set_verticalalignment('top')
+        label = axes.yaxis.get_label()
+        x_lab_pos, y_lab_pos = label.get_position()
+        label.set_position([x_lab_pos, .95])
+        label.set_verticalalignment('top')
 
         return 1
 

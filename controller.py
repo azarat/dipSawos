@@ -12,7 +12,7 @@ class DataPreparing:
     def __init__(self, discharge, channel, source):
         db = db_model.LoadDB(discharge, channel, source)
 
-        self.winListNames = [
+        self.win_list_names = [
             'triang',  # minimum info save
             'blackmanharris',  # middle info save (maybe best practice)
             'flattop',  # maximum info save
