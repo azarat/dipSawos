@@ -19,8 +19,9 @@ class ViewData:
 
         channel_from = 1
         channel_to = 97
-        window_width_val = 101
+        window_width_val = 500
         public_window_width_val = 10
+        window_func = 'triang'
 
         """ Extract data from MATLAB database """
         self.processing = dt.PreProfiling()
@@ -59,13 +60,14 @@ class ViewData:
         original T(t) and smoothed, i.e., filtered T(t)
         with different window functions
         """
-        self.info_losses_wind_func(
-            channels_pos=data.channels_pos,
-            window_width=81,
-            temperature_original=calibrate_temperature_list,
-            analyze_window=data.winListNames,
-            channel_to_compare=22,
-            time_list=time_list)
+        # self.info_losses_wind_func(
+        #     channels_pos=r_maj,
+        #     window_width=window_width_val,
+        #     temperature_original=calibrate_temperature_list,
+        #     analyze_window=data.winListNames,
+        #     channel_to_compare=60,
+        #     time_list=time_list,
+        #     channel_order_list=channel_order_list)
         # # # # # # # # # # # # # # # # # # # # # # # #
 
         """
@@ -77,7 +79,7 @@ class ViewData:
         'bartlett', 'parzen', 'bohman', 'nuttall', 'barthann'
         """
         temperature_list = self.processing.filter(
-            calibrate_temperature_list, window_width_val, 'triang')
+            calibrate_temperature_list, window_width_val, window_func)
         # # # # # # # # # # # # # # # # # # # # # # # #
 
         """ Filtering T(r_maj) WARNING: lose too many info """
@@ -87,12 +89,21 @@ class ViewData:
         # # # # # # # # # # # # # # # # # # # # # # # #
 
         """ Singe plot with one of window func """
-        # self.build_temperature_rmaj_single_plot(temperature_list[49])
+        # self.build_temperature_rmaj_single_plot(
+        #     temperature=temperature_list,
+        #     temperature_original=calibrate_temperature_list,
+        #     channels_pos=r_maj,
+        #     window_width=window_width_val,
+        #     channel_to_compare=50,
+        #     time_list=time_list,
+        #     channel_order_list=channel_order_list,
+        #     window_name=window_func)
         # # # # # # # # # # # # # # # # # # # # # # # #
 
         temperature_list = self.processing.dict_to_list(temperature_list)
 
-        # self.build_temperature_rmaj_series_plot(temperature_list, public_temperature_ordered_list, r_maj)
+        # self.build_temperature_rmaj_series_plot(temperature_list, public_temperature_ordered_list,
+        #                                         window_width_val, r_maj)
         # self.build_temperature_rmaj_time_3d_surface(temperature_list, r_maj)
 
         plt.show()
@@ -122,8 +133,10 @@ class ViewData:
 
         return 1
 
-    @staticmethod
-    def build_temperature_rmaj_single_plot(temperature):
+    def build_temperature_rmaj_single_plot(self,
+                                           temperature, temperature_original, window_name,
+                                           channels_pos, window_width, time_list,
+                                           channel_to_compare, channel_order_list):
 
         """
         Build single plot T(t) with fixed r_maj
@@ -135,52 +148,89 @@ class ViewData:
         fig.set_size_inches(15, 8)
 
         axes.plot(
-            range(0, len(temperature)),
-            temperature
+            # range(0, len(temperature_original[channel_to_compare])),
+            time_list[channel_to_compare][0:len(temperature_original[channel_to_compare])],
+            temperature_original[channel_to_compare],
+            alpha=0.5,
+            color='c'
         )
 
-        axes.set(xlabel='R maj (num order only)', ylabel='T (eV)',
-                 title='JET tokamat temperature evolution')
+        axes.plot(
+            # range(0, len(temperature[channel_to_compare])),
+            time_list[channel_to_compare][0:len(temperature[channel_to_compare])],
+            temperature[channel_to_compare],
+            color='b'
+        )
+
+        axes.set(xlabel='Time (seconds)', ylabel='T (eV)',
+                 title='Original signal vs filtered, "'
+                       + window_name + '" wind. func., '
+                       + str(channel_order_list[channel_to_compare]) + ' channel, 25 discharge, '
+                       'wind. width ' + str(window_width) +
+                       ', R_maj = ' + str(channels_pos[channel_to_compare]))
         axes.grid()
+
+        self.align_axes(axes)
+
+        fig.savefig('results/filters/single_plots/single_d25_c' +
+                    str(channel_order_list[channel_to_compare]) +
+                    '_w' + str(window_width) +
+                    '_WF' + window_name +
+                    '.png')
 
         return 1
 
-    @staticmethod
-    def build_temperature_rmaj_series_plot(temperature_list, public_temperature_ordered_list, r_maj):
+    def build_temperature_rmaj_series_plot(self, temperature_list, public_temperature_ordered_list, window_width, r_maj):
 
         """
         Build multiple plots T(r_maj)
         with various fixed time
         """
 
-        fig, axes = plt.subplots(2, 1)
+        fig, axes = plt.subplots()
         fig.set_size_inches(15, 8)
 
         # # # # # # # # # # # # # # # # # # # # # # # #
         for time, temperature in enumerate(np.transpose(temperature_list)):
-            if time in range(0, 4000, 100):
-                axes[0].plot(
-                    # r_maj[0:80],
-                    range(0, len(temperature[0:80])),
-                    temperature[0:80]
-                )
+            """ 
+            Labeling each channel (in ordered range) 
+            for T(R_maj) plot on the very beginning instant
+            """
+            if time == 0:
+                labels = range(80)
 
-        for time, temperature in enumerate(np.transpose(public_temperature_ordered_list)):
-            if time in range(0, 100, 2):
-                axes[1].plot(
-                    # r_maj[0:80],
-                    range(0, len(temperature[0:80])),
+                for label, x, y in zip(labels, r_maj[0:80], temperature[0:80]):
+                    if label <= 23:
+                        pos_offset = (-10, 10)
+                    elif label in range(23, 50):
+                        pos_offset = (10, 10)
+                    else:
+                        pos_offset = (-10, -10)
+
+                    if label in range(0, 80, 2):
+                        plt.annotate(
+                            label,
+                            xy=(x, y), xytext=pos_offset,
+                            textcoords='offset points', ha='center', va='center',
+                            arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=0'))
+
+            if time in range(0, 4000, 100):
+                axes.plot(
+                    r_maj[0:80],
+                    # range(0, len(temperature[0:80])),
                     temperature[0:80]
                 )
         # # # # # # # # # # # # # # # # # # # # # # # #
 
-        axes[0].set(ylabel='T (eV)',
-               title='JET tokamat temperature evolution')
-        axes[1].set(xlabel='R maj (num order only)', ylabel='T (eV)')
-        axes[0].grid()
-        axes[1].grid()
+        axes.set(ylabel='T (eV)', xlabel='R maj (m)',
+                 title='Temperature changes inside toroid '
+                       'in various time instants '
+                       'with time smoothing, win. width ' + str(window_width))
+        axes.grid()
 
-        # fig.savefig('results/filters/d25_c55_w81.png')
+        # self.align_axes(axes)
+
+        fig.savefig('results/filters/d25_T_Rmaj_with_labeled_points_c0080_w' + str(window_width) + '.png')
 
         return 1
 
@@ -191,6 +241,7 @@ class ViewData:
         """
 
         temperature_original = kwargs['temperature_original']
+        time = kwargs['time_list'][kwargs['channel_to_compare']]
 
         if temperature_original and type(temperature_original) is dict:
             temperature_original = self.processing.dict_to_list(temperature_original)
@@ -212,7 +263,7 @@ class ViewData:
         axes[0].set_yticklabels(kwargs['analyze_window'])
 
         axes[0].set(xlabel='RMSD (eV)', ylabel='Window type',
-                    title='Losses of info, ' + str(kwargs['channel_to_compare'])
+                    title='Losses of info, ' + str(kwargs['channel_order_list'][kwargs['channel_to_compare']])
                           + ' channel, 25 discharge, '
                             'wind. width ' + str(kwargs['window_width']) +
                           ', R_maj = ' + str(kwargs['channels_pos'][kwargs['channel_to_compare']]))
@@ -227,18 +278,41 @@ class ViewData:
             kwargs['time_list'][kwargs['channel_to_compare']],
             temperature_original[kwargs['channel_to_compare']]
         )
+
+        custom_grid_time = [time[i] for i in range(len(time)) if (i % kwargs['window_width'] == 0)]
+
+        axes[1].set_xticks(custom_grid_time, minor=True)
+        axes[1].xaxis.grid(True, which='minor')
+
         axes[1].set(xlabel='Time (seconds)', ylabel='Temperature (eV)',
                     title='')
 
-        axes[1].grid()
+        # axes[1].grid()
 
-        """ Align label position """
+        self.align_axes(axes)
+
+        fig.savefig('results/filters/RMSD/RMSD_d25_c' +
+                    str(kwargs['channel_order_list'][kwargs['channel_to_compare']]) +
+                    '_w' + str(kwargs['window_width']) +
+                    '.png')
+
+        return 1
+
+    @staticmethod
+    def align_axes(axes):
+        if axes is not list or tuple:
+            axes = [axes]
+
         for ax in axes:
             label = ax.xaxis.get_label()
             x_lab_pos, y_lab_pos = label.get_position()
             label.set_position([1.0, y_lab_pos])
             label.set_horizontalalignment('right')
 
-        # fig.savefig('results/filters/compare_wind_funcs_d25_c55_w81.png')
+            label = ax.yaxis.get_label()
+            x_lab_pos, y_lab_pos = label.get_position()
+            label.set_position([x_lab_pos, .95])
+            label.set_verticalalignment('top')
 
         return 1
+
