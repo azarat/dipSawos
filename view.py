@@ -8,9 +8,8 @@ import itertools
 
 # IMPORTANT to be declared for 3d plots
 from mpl_toolkits.mplot3d import Axes3D
-from matplotlib import cm
+from matplotlib import cm, rc
 from matplotlib.ticker import LinearLocator, FormatStrFormatter
-
 
 class ViewData:
 
@@ -22,7 +21,7 @@ class ViewData:
 
         channel_from = 1
         channel_to = 97
-        window_width_val = 81
+        window_width_val = 2
         public_window_width_val = 10
         window_func = 'triang'
 
@@ -56,10 +55,11 @@ class ViewData:
         # # # # # # # # # # # # # # # # # # # # # # # #
 
         """ Calibrate """
-        calibrate_temperature_list = data.calibrate(
-            temperature_ordered_list, public_temperature_ordered_list,
-            window_width_val, public_window_width_val,
-            channel_from, channel_to)
+        # calibrate_temperature_list = data.calibrate(
+        #     temperature_ordered_list, public_temperature_ordered_list,
+        #     window_width_val, public_window_width_val,
+        #     channel_from, channel_to)
+        calibrate_temperature_list = self.processing.list_to_dict(temperature_ordered_list)
         # # # # # # # # # # # # # # # # # # # # # # # #
 
         """ 
@@ -106,16 +106,9 @@ class ViewData:
 
         # self.build_filter_windows(data.win_list_names)
 
-        """ Filtering T(r_maj) WARNING: lose too many info """
-        # temperature_list = self.processing.dict_to_list(temperature_list)
-        # temperature_list_transpose = self.processing.list_to_dict(np.transpose(temperature_list))
-        # temperature_list = self.processing.filter(temperature_list_transpose, 20, 'triang')
-        # # # # # # # # # # # # # # # # # # # # # # # #
-
         """ Singe plot with one of window func """
         # Multiple format
         # for channel, wind, wind_w in itertools.product(channel_to_compare, window_to_compare, window_width_to_compare):
-        #
         #     temperature_list = self.processing.filter(
         #         calibrate_temperature_list, wind_w, wind)
         #
@@ -128,24 +121,41 @@ class ViewData:
         #         time_list=time_list,
         #         channel_order_list=channel_order_list,
         #         window_name=wind)
-
+        #
+        # Multiple format
+        # for channel in channel_to_compare:
+        #     self.build_temperature_rmaj_single_plot_originals(
+        #         temperature_original=calibrate_temperature_list,
+        #         channels_pos=r_maj,
+        #         channel_to_compare=channel,
+        #         time_list=time_list,
+        #         channel_order_list=channel_order_list)
+        #
         # Original format
         # self.build_temperature_rmaj_single_plot(
         #     temperature=temperature_list,
         #     temperature_original=calibrate_temperature_list,
         #     channels_pos=r_maj,
         #     window_width=window_width_val,
-        #     channel_to_compare=14,
+        #     channel_to_compare=23,
         #     time_list=time_list,
         #     channel_order_list=channel_order_list,
         #     window_name=window_func)
+        # # # # # # # # # # # # # # # # # # # # # # # #
+
+        """ Filtering T(r_maj) WARNING: lose too many info """
+        # temperature_list = self.processing.dict_to_list(temperature_list)
+        # temperature_list_transpose = self.processing.list_to_dict(np.transpose(temperature_list))
+        # temperature_list = self.processing.filter(temperature_list_transpose, 5, 'triang')
+        # temperature_list = self.processing.dict_to_list(temperature_list)
+        # temperature_list = self.processing.list_to_dict(np.transpose(temperature_list))
         # # # # # # # # # # # # # # # # # # # # # # # #
 
         temperature_list = self.processing.dict_to_list(temperature_list)
 
         # self.build_temperature_rmaj_series_plot(temperature_list, public_temperature_ordered_list,
         #                                         window_width_val, r_maj)
-        # self.build_temperature_rmaj_time_3d_surface(temperature_list, r_maj)
+        self.build_temperature_rmaj_time_3d_surface(temperature_list, r_maj, time_list)
 
         plt.show()
 
@@ -172,32 +182,53 @@ class ViewData:
             if not os.path.exists(directory):
                 os.makedirs(directory)
 
-            fig.savefig(directory + 'filters_' + name + '.png')
+            # fig.savefig(directory + 'filters_' + name + '.png')
 
         return 1
 
     @staticmethod
-    def build_temperature_rmaj_time_3d_surface(temperature_list, r_maj):
+    def build_temperature_rmaj_time_3d_surface(temperature_list, r_maj, time_list):
         fig = plt.figure()
-        ax = fig.gca(projection='3d')
+        # ax = fig.gca(projection='3d')
+        fig.set_size_inches(15, 7)
+
+        # for t_l_i, t_list in enumerate(temperature_list):
+        #     for t_i, t in enumerate(t_list):
+        #         if t < 4000:
+        #             temperature_list[t_l_i][t_i] = 0
 
         # Make data.
-        x = np.arange(0, len(temperature_list[1]))
+        # x = np.arange(0, len(temperature_list[1]))
+        x = time_list[0][0:len(temperature_list[1])]
         y = r_maj[0:len(r_maj) - 1]
         x, y = np.meshgrid(x, y)
         z = np.array(temperature_list)
 
+        # COLORMAP HERE
+        cs = plt.contourf(x, y, z, 50, corner_mask=True, cmap=cm.Reds)
+        # plt.contour(cs, colors='k', linewidths=0.2)
+        plt.title('Temperature evolution cross JET tokamak', fontsize=17)
+        plt.xlabel('Time (seconds)', fontsize=17)
+        plt.ylabel('R_maj (m)', fontsize=17)
+        # END
+
         # Plot the surface.
-        surf = ax.plot_surface(x, y, z, cmap=cm.coolwarm,
-                               linewidth=0, antialiased=False)
+        # surf = ax.plot_surface(x, y, z, cmap=cm.plasma,
+        #                        linewidth=0, antialiased=False)
 
         # Customize the z axis.
-        # ax.set_zlim(0.0, 0.5)
-        ax.zaxis.set_major_locator(LinearLocator(10))
-        ax.zaxis.set_major_formatter(FormatStrFormatter('%.02f'))
+        # ax.set_ylim(2.5, 3.7)
+        # ax.zaxis.set_major_locator(LinearLocator(10))
+        # ax.zaxis.set_major_formatter(FormatStrFormatter('%.02f'))
 
         # Add a color bar which maps values to colors.
-        fig.colorbar(surf)
+        # fig.colorbar(surf)
+        cbs = fig.colorbar(cs)
+        cbs.ax.set_ylabel('Temperature (eV)', fontsize=17)
+
+        # cbs.ax.tick_params(labelsize=17)
+
+        fig.savefig('results/3d/tokamat_colormap_reds_noCalibration.png')
 
         return 1
 
@@ -213,7 +244,7 @@ class ViewData:
         """
 
         fig, axes = plt.subplots()
-        fig.set_size_inches(15, 8)
+        fig.set_size_inches(15, 7)
 
         axes.plot(
             # range(0, len(temperature_original[channel_to_compare])),
@@ -236,21 +267,70 @@ class ViewData:
                        + str(channel_order_list[channel_to_compare]) + ' channel, 25 discharge, '
                        'wind. width ' + str(window_width) +
                        ', R_maj = ' + str(channels_pos[channel_to_compare]))
+
+        for item in ([axes.title, axes.xaxis.label, axes.yaxis.label] +
+                     axes.get_xticklabels() + axes.get_yticklabels()):
+            item.set_fontsize(17)
+
         axes.grid()
 
-        self.align_axes(axes)
+        # self.align_axes(axes)
 
-        directory = 'results/T_time/d25/' \
+        directory = 'results/originals/d25/' \
                     'o' + str(channel_to_compare) + \
                     '_c' + str(channel_order_list[channel_to_compare]) + '/' + \
                     str(window_name) + '/'
+        # if not os.path.exists(directory):
+        #     os.makedirs(directory)
+        #
+        # fig.savefig(directory + 'single_d03_c' +
+        #             str(channel_order_list[channel_to_compare]) +
+        #             '_w' + str(window_width) +
+        #             '_WF' + window_name +
+        #             '.png')
+        print(directory + 'single_d03_c' +
+                    str(channel_order_list[channel_to_compare]) +
+                    '_w' + str(window_width) +
+                    '_WF' + window_name +
+                    '.png')
+
+        return 1
+
+    def build_temperature_rmaj_single_plot_originals(self,
+                                           temperature_original, channels_pos, time_list,
+                                           channel_to_compare, channel_order_list):
+
+        """
+        Build single plot T(t) with fixed r_maj
+        CAUTION: inverting plasma radius is near 48/49 channel (in ordered unit list)
+        CAUTION: channel_to_check means temperature set, ordered by r_maj
+        """
+
+        fig, axes = plt.subplots()
+        fig.set_size_inches(15, 8)
+
+        axes.plot(
+            # range(0, len(temperature_original[channel_to_compare])),
+            time_list[channel_to_compare][0:len(temperature_original[channel_to_compare])],
+            temperature_original[channel_to_compare]
+        )
+
+        axes.set(xlabel='Time (seconds)', ylabel='T (eV)',
+                 title='Original signal, '
+                       + str(channel_order_list[channel_to_compare]) + ' channel, 25 discharge, R_maj = '
+                       + str(channels_pos[channel_to_compare]))
+        axes.grid()
+
+        # self.align_axes(axes)
+
+        directory = 'results/originals/d25/' \
+                    'o' + str(channel_to_compare) + \
+                    '_c' + str(channel_order_list[channel_to_compare]) + '/'
         if not os.path.exists(directory):
             os.makedirs(directory)
 
         fig.savefig(directory + 'single_d25_c' +
                     str(channel_order_list[channel_to_compare]) +
-                    '_w' + str(window_width) +
-                    '_WF' + window_name +
                     '.png')
 
         return 1
@@ -263,7 +343,7 @@ class ViewData:
         """
 
         fig, axes = plt.subplots()
-        fig.set_size_inches(15, 8)
+        fig.set_size_inches(15, 7)
 
         # # # # # # # # # # # # # # # # # # # # # # # #
         for time, temperature in enumerate(np.transpose(temperature_list)):
@@ -288,6 +368,11 @@ class ViewData:
                             xy=(x, y), xytext=pos_offset,
                             textcoords='offset points', ha='center', va='center',
                             arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=0'))
+                axes.plot(
+                    r_maj[0:80],
+                    # range(0, len(temperature[0:80])),
+                    temperature[0:80]
+                )
 
             if time in range(0, 4000, 100):
                 axes.plot(
@@ -301,17 +386,22 @@ class ViewData:
                  title='Temperature changes inside toroid '
                        'in various time instants '
                        'with time smoothing, win. width ' + str(window_width))
+
+        for item in ([axes.title, axes.xaxis.label, axes.yaxis.label] +
+                     axes.get_xticklabels() + axes.get_yticklabels()):
+            item.set_fontsize(17)
+
         axes.grid()
 
         # self.align_axes(axes)
 
-        directory = 'results/T_Rmaj/d25/'
+        # directory = 'results/T_Rmaj/d25/'
 
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-
-        fig.savefig(directory + 'd25_T_Rmaj_with_labeled_points_c0080_w' +
-                    str(window_width) + '.png')
+        # if not os.path.exists(directory):
+        #     os.makedirs(directory)
+        #
+        # fig.savefig(directory + 'd25_T_Rmaj_single_c0080_w' +
+        #             str(window_width) + '_ti3500.png')
 
         return 1
 
@@ -379,10 +469,10 @@ class ViewData:
         if not os.path.exists(directory):
             os.makedirs(directory)
 
-        fig.savefig(directory + 'RMSD_d25_c' +
-                    str(kwargs['channel_order_list'][kwargs['channel_to_compare']]) +
-                    '_w' + str(kwargs['window_width']) +
-                    '.png')
+        # fig.savefig(directory + 'RMSD_d25_c' +
+        #             str(kwargs['channel_order_list'][kwargs['channel_to_compare']]) +
+        #             '_w' + str(kwargs['window_width']) +
+        #             '.png')
         return 1
 
     @staticmethod
