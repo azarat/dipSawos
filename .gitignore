@@ -2,3 +2,4 @@ saw_data.mat
 test.py
 results
 .idea
+__pycache__
