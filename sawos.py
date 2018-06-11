@@ -1,7 +1,7 @@
 import view as v
 visual = v.ViewData()
 
-""" Other tests """
+""" Other tests all """
 # from scipy.io import loadmat
 # import matplotlib.pyplot as plt
 #
