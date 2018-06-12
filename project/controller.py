@@ -1,4 +1,4 @@
-import model as db_model
+import project.model as db_model
 from operator import itemgetter
 from scipy import signal as signal_processor
 import numpy as np

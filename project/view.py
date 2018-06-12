@@ -1,4 +1,4 @@
-import controller as dt
+import project.controller as dt
 import matplotlib.pyplot as plt
 import numpy as np
 from operator import itemgetter
@@ -34,8 +34,7 @@ class ViewData:
 
         """ Extract data from MATLAB database """
         self.processing = dt.PreProfiling()
-        data = dt.Profiling(discharge=25, channel=(channel_from, channel_to),
-                            source='real')
+        data = dt.Profiling(discharge=25, channel=(channel_from, channel_to), source='real')
         data_public = dt.Profiling(discharge=25, channel=(channel_from, channel_to),
                                    source='public')
         # # # # # # # # # # # # # # # # # # # # # # # #
@@ -228,7 +227,7 @@ class ViewData:
 
         # cbs.ax.tick_params(labelsize=17)
 
-        fig.savefig('results/3d/tokamat_colormap_reds_noCalibration.png')
+        # fig.savefig('results/3d/tokamat_colormap_reds_noCalibration.png')
 
         return 1
 
@@ -329,9 +328,9 @@ class ViewData:
         if not os.path.exists(directory):
             os.makedirs(directory)
 
-        fig.savefig(directory + 'single_d25_c' +
-                    str(channel_order_list[channel_to_compare]) +
-                    '.png')
+        # fig.savefig(directory + 'single_d25_c' +
+        #             str(channel_order_list[channel_to_compare]) +
+        #             '.png')
 
         return 1
 
