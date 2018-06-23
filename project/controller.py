@@ -2,6 +2,7 @@ import project.model as db_model
 from operator import itemgetter
 from scipy import signal as signal_processor
 import numpy as np
+import sys
 
 
 class DataPreparing:
@@ -9,8 +10,8 @@ class DataPreparing:
     internal_temperature_original = 0
     internal_channels_pos = 0
 
-    def __init__(self, discharge, channel, source):
-        db = db_model.LoadDB(discharge, channel, source)
+    def __init__(self, discharge, source):
+        db = db_model.LoadDB(discharge, source)
 
         self.win_list_names = [
             'triang',  # minimum info save
@@ -20,7 +21,8 @@ class DataPreparing:
             'bartlett', 'parzen', 'bohman', 'nuttall', 'barthann'
         ]
 
-        self.channels_pos = db.channels
+        self.channels_pos = db.channels_model
+        # self.channels_pos = db.channels
         self.time_original = db.time
         self.temperature_original = db.temperature
 
@@ -51,11 +53,17 @@ class DataPreparing:
 
 class Profiling(DataPreparing):
 
-    def order_by_r_maj(self, temperature_list_to_order, channel_from, channel_to):
+    def order_by_r_maj(self, temperature_list_to_order):
+        """ -----------------------------------------
+            version: 0.2
+            desc: ordering temperature list by r_maj position
+            ;:param temperature_list_to_order: 2d array of temperature
+            :return ordered 2d array
+        ----------------------------------------- """
         temperature_ordered_list = []
 
-        for index, channel in enumerate(sorted(self.channels_pos.items(), key=itemgetter(1))):
-            if channel[0] in range(channel_from, channel_to - 1):
+        for channel in sorted(self.channels_pos.items(), key=itemgetter(1)):
+            if channel[0] in range(1, len(temperature_list_to_order)):
                 temperature_ordered_list.append(
                     temperature_list_to_order[channel[0]]
                 )
@@ -76,18 +84,65 @@ class Profiling(DataPreparing):
 
         return calibrate_temperature_list
 
+    def normalization(self, temperature, method):
+        """ -----------------------------------------
+            version: 0.2
+            desc: math normalization on 1
+            :param temperature: 2d list of num
+            :param method: norm by "end" or "start"
+            :return normalized 2d list of num
+        ----------------------------------------- """
+        output = []
+
+        for num_list in temperature:
+            if method == "start":
+                normalized = num_list / (sum(num_list[0:9]) / 10)
+                boundary = (0, 1.2)
+            elif method == "end":
+                normalized = num_list / (sum(num_list[len(num_list)-10:len(num_list)-1]) / 10)
+                boundary = (0.8, 2)
+            else:
+                sys.exit("Error: normalization failed")
+
+            normalized = self.outlier_filter(normalized, boundary)
+
+            output.append(normalized)
+
+        return output
+
+    @staticmethod
+    def outlier_filter(temperature, boundary):
+        """ -----------------------------------------
+            version: 0.2
+            desc: remove extra values from list
+            :param temperature: 1d list of num
+            :param boundary: array 0=>min and 1=>max
+            :return filtered 1d list of num
+        ----------------------------------------- """
+        filtered = []
+
+        for num in temperature:
+            if num < boundary[0]:
+                filtered.append(boundary[0])
+            elif num > boundary[1]:
+                filtered.append(boundary[1])
+            else:
+                filtered.append(num)
+
+        return filtered
+
 
 class PreProfiling:
 
     @staticmethod
     def filter(input_signal, window_width, window_name):
         window = signal_processor.get_window(window_name, window_width)
-        output_signal = {}
+        output_signal = []
 
-        for channel, temperature in input_signal.items():
-            output_signal.update({
-                channel: signal_processor.convolve(temperature, window, mode='valid') / sum(window)
-            })
+        for temperature in input_signal:
+            output_signal.append(
+                signal_processor.convolve(temperature, window, mode='valid') / sum(window)
+            )
 
         return output_signal
 

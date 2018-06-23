@@ -5,39 +5,36 @@ class LoadDB:
     internal_time = 0
     internal_temperature = 0
     internal_channels = 0
+    internal_channels_model = 0
 
-    def __init__(self, discharge, channel, source):
+    def __init__(self, discharge, source):
         sawdata = loadmat('saw_data.mat')
 
         data_type = 'KK3PPF' if source == 'public' else 'KK3JPF'
 
+        """ For some reason we need to have model/standard to sort channels """
         channels_temp = {}
+        for i in range(1, 97):
+            channels_temp.update({
+                i: sawdata['saw_data'][0, 0]['KK3PPF'][0,0]['RA' + str("{:0>2d}".format(i))][0, 25]
+            })
+        self.channels_model = channels_temp
 
+        channels_temp = {}
         for i in range(1, 97):
             channels_temp.update({
                 i: sawdata['saw_data'][0, 0]['KK3PPF'][0,0]['RA' + str("{:0>2d}".format(i))][0, discharge]
             })
         self.channels = channels_temp
 
-        if type(channel) is tuple:
+        temperature_temp = {}
+        for i in range(1, 97):
+            temperature_temp.update({
+                i: sawdata['saw_data'][0, 0][data_type][0, 0]['TE' + str("{:0>2d}".format(i))][0, discharge].ravel()
+            })
 
-            temperature_temp = {}
-            time_temp = {}
-
-            for i in range(channel[0], channel[1]):
-                temperature_temp.update({
-                    i: sawdata['saw_data'][0, 0][data_type][0, 0]['TE' + str("{:0>2d}".format(i))][0, discharge].ravel()
-                })
-                time_temp.update({
-                    i: sawdata['saw_data'][0, 0][data_type][0, 0]['TIM' + str("{:0>2d}".format(i))][0, discharge].ravel()
-                })
-
-            self.temperature = temperature_temp
-            self.time = time_temp
-
-        else:
-            self.temperature = sawdata['saw_data'][0, 0][data_type][0, 0]['TE' + str("{:0>2d}".format(channel))][0, discharge]
-            self.time = sawdata['saw_data'][0, 0][data_type][0, 0]['TIM' + str("{:0>2d}".format(channel))][0, discharge]
+        self.time = sawdata['saw_data'][0, 0][data_type][0, 0]['TIM01'][0, discharge].ravel()
+        self.temperature = temperature_temp
 
     @property
     def channels(self):
@@ -46,6 +43,14 @@ class LoadDB:
     @channels.setter
     def channels(self, value):
         self.internal_channels = value
+
+    @property
+    def channels_model(self):
+        return self.internal_channels_model
+
+    @channels_model.setter
+    def channels_model(self, value):
+        self.internal_channels_model = value
 
     @property
     def time(self):
