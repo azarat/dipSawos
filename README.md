@@ -1,5 +1,3 @@
-“Physics isn't the most important thing. Love is.” 
+To do list:
 
-― Richard Feynman
-
-I have changed dir structure after moving to the debian OS
+    Improve the identification of region for search Inversion Radius => Controller ~ 245

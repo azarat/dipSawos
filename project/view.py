@@ -17,7 +17,7 @@ class ViewData:
     channel_to = 80
     window_width_val = 500
     window_func = 'triang'
-    boundary = (0, 1.2)
+    boundary = (0.5, 1.5)
 
     def __init__(self):
         print("Input: V02")
@@ -37,7 +37,7 @@ class ViewData:
             status: IN DEV
         ----------------------------------------- """
 
-        for dis in range(50, 51):
+        for dis in range(1, 65):
 
             print("Discharge: " + str(dis))
 
@@ -76,20 +76,23 @@ class ViewData:
             temperature_list = data.normalization(temperature_list)
             # # # # # # # # # # # # # # # # # # # # # # # #
 
-            """ Cut outliers """
+            """ Find Inversion Radius """
+            inv_radius_channel = dt.FindInvRadius().inv_radius(temperature_list, 5, 0.2)
+            inv_radius_val = r_maj[inv_radius_channel]
+            print("Inversion radius channel point: " + str(inv_radius_channel))
+            print("Inversion radius: " + str(inv_radius_val))
+
+            """
+            Cut outliers
+            WARNING: Have influence on inv. rad. detection (more cut => less val of outlier need)
+            """
             # temperature_list_original = data.outlier_filter(temperature_list_original, boundary)
-            # temperature_list = data.outlier_filter(temperature_list, boundary)
+            temperature_list = data.outlier_filter(temperature_list, self.boundary)
             # # # # # # # # # # # # # # # # # # # # # # # #
 
-            self.build_temperature_rmaj_series_plot(temperature_list, self.window_width_val, r_maj)
-            self.build_temperature_rmaj_time_3d_surface(temperature_list, r_maj, time_list, discharge=dis)
+            self.build_temperature_rmaj_series_plot(temperature_list, self.window_width_val, r_maj, discharge=dis, inv_rad=inv_radius_val, inv_rad_c=inv_radius_channel)
+            self.build_temperature_rmaj_time_3d_surface(temperature_list, r_maj, time_list, window_width=self.window_width_val, discharge=dis, inv_rad=inv_radius_val, inv_rad_c=inv_radius_channel)
             # self.build_temperature_rmaj_time_3d_surface_perspective(temperature_list, r_maj, time_list, discharge=dis)
-
-            inv_radius_channel = dt.FindInvRadius().inv_radius(temperature_list, 5)
-            inv_radius__val = r_maj[inv_radius_channel]
-            print("Inversion radius channel point: " + str(inv_radius_channel))
-            print("Inversion radius: " + str(inv_radius__val))
-
             # self.build_temperature_rmaj_single_plot(
             #     temperature=temperature_list,
             #     temperature_original=temperature_list_original,
@@ -99,9 +102,10 @@ class ViewData:
             #     time_list=time_list,
             #     channel_order_list=channel_order_list,
             #     window_name=window_func)
-            # plt.close("all")
 
-        plt.show()
+            plt.close("all")
+
+        # plt.show()
 
         return 1
 
@@ -157,7 +161,7 @@ class ViewData:
 
         # COLORMAP HERE "CMRmap", "inferno", "plasma"
         cs = plt.contourf(x, y, z, 50, corner_mask=True, cmap=cm.CMRmap)
-        plt.title('Temperature evolution cross JET tokamak, discharge ' + str(kwargs['discharge']), fontsize=17)
+        plt.title('Temperature evolution, inv. rad. ' + str('{:.3f}'.format(kwargs['inv_rad'])) + ', inv. rad. index' + str(kwargs['inv_rad_c']) + ', discharge ' + str(kwargs['discharge']), fontsize=17)
         plt.xlabel('Time', fontsize=17)
         plt.ylabel('R_maj', fontsize=17)
         # END
@@ -166,7 +170,7 @@ class ViewData:
         cbs = fig.colorbar(cs)
         cbs.ax.set_ylabel('Temperature (eV)', fontsize=17)
 
-        # fig.savefig('results/3d_au_0_48/tokamat_colormap_reds_dis' + str(kwargs['discharge']) + '.png')
+        fig.savefig('results/3d_au_0_80/tokamat_colormap_dis' + str(kwargs['discharge']) + '_w' + str(kwargs['window_width']) + '.png')
 
         return 1
 
@@ -328,7 +332,7 @@ class ViewData:
         return 1
 
     @staticmethod
-    def build_temperature_rmaj_series_plot(temperature_list, window_width, r_maj):
+    def build_temperature_rmaj_series_plot(temperature_list, window_width, r_maj, **kwargs):
         """ -----------------------------------------
             version: 0.2
             :param temperature_list: 2d list of num
@@ -376,9 +380,11 @@ class ViewData:
         # # # # # # # # # # # # # # # # # # # # # # # #
 
         axes.set(ylabel='T (eV)', xlabel='R maj (m)',
-                 title='Temperature changes inside toroid '
-                       'in various time instants '
-                       'with time smoothing, win. width ' + str(window_width))
+                 title='T(r_maj) series '
+                       'in various time instants, '
+                       'win. width ' + str(window_width) +
+                       ', inv. rad. index ' + str(kwargs['inv_rad_c']) +
+                       ', inv. rad. ' + str('{:.3f}'.format(kwargs['inv_rad'])))
 
         for item in ([axes.title, axes.xaxis.label, axes.yaxis.label] +
                      axes.get_xticklabels() + axes.get_yticklabels()):
@@ -388,13 +394,7 @@ class ViewData:
 
         # self.align_axes(axes)
 
-        # directory = 'results/T_Rmaj/d25/'
-
-        # if not os.path.exists(directory):
-        #     os.makedirs(directory)
-        #
-        # fig.savefig(directory + 'd25_T_Rmaj_single_c0080_w' +
-        #             str(window_width) + '_ti3500.png')
+        fig.savefig('results/T_Rmaj_series/dis' + str(kwargs['discharge']) + '_T_Rmaj_series_c0080_w' + str(window_width) + '.png')
 
         return 1
 

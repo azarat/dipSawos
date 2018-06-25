@@ -21,8 +21,8 @@ class Controller:
             'bartlett', 'parzen', 'bohman', 'nuttall', 'barthann'
         ]
 
-        self.channels_pos = db.channels_model
-        # self.channels_pos = db.channels
+        # self.channels_pos = db.channels_model
+        self.channels_pos = db.channels
         self.time_original = db.time
         self.temperature_original = db.temperature
 
@@ -173,7 +173,7 @@ class PreProfiling:
 class FindInvRadius:
 
     @staticmethod
-    def plane_indicator(plane_list):
+    def plane_indicator(plane_list, outlier):
 
         """ -----------------------------------------
             version: 0.2
@@ -200,16 +200,20 @@ class FindInvRadius:
         indicator_increase = abs(sum(increase) * (len(increase) * stat_weight))
         indicator_decrease = abs(sum(decrease) * (len(decrease) * stat_weight))
 
-        if indicator_increase > indicator_decrease:
+        # Tests
+        # print(indicator_decrease)
+        # print(indicator_increase)
+
+        if indicator_increase > indicator_decrease and abs(indicator_increase - indicator_decrease) < outlier:
             indicator = 1
-        elif indicator_decrease > indicator_increase:
+        elif indicator_decrease > indicator_increase and abs(indicator_decrease - indicator_increase) < outlier:
             indicator = -1
         else:
             indicator = 0
 
         return indicator
 
-    def inv_radius(self, temperature_list, window_width):
+    def inv_radius(self, temperature_list, window_width, outlier):
 
         """ -----------------------------------------
             version: 0.2
@@ -232,8 +236,13 @@ class FindInvRadius:
 
                 analysis_area = t_list[i:i + window_width]
 
+                # Tests
+                # if i == 35:
+                #     print(analysis_area)
+                #     self.plane_indicator(analysis_area, outlier)
+
                 """ Analysis only upward trends """
-                plane_area_direction = self.plane_indicator(analysis_area)
+                plane_area_direction = self.plane_indicator(analysis_area, outlier)
                 if plane_area_direction == 1:
 
                     """ Analysis only analysis_area which have intersection with mean value"""
