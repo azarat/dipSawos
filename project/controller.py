@@ -5,7 +5,7 @@ import numpy as np
 import sys
 
 
-class DataPreparing:
+class Controller:
     internal_time_original = 0
     internal_temperature_original = 0
     internal_channels_pos = 0
@@ -51,7 +51,7 @@ class DataPreparing:
         self.internal_channels_pos = value
 
 
-class Profiling(DataPreparing):
+class Profiling(Controller):
 
     def order_by_r_maj(self, temperature_list_to_order):
         """ -----------------------------------------
@@ -84,28 +84,17 @@ class Profiling(DataPreparing):
 
         return calibrate_temperature_list
 
-    def normalization(self, temperature, method):
+    def normalization(self, temperature):
         """ -----------------------------------------
             version: 0.2
             desc: math normalization on 1
             :param temperature: 2d list of num
-            :param method: norm by "end" or "start"
             :return normalized 2d list of num
         ----------------------------------------- """
         output = []
 
         for num_list in temperature:
-            if method == "start":
-                normalized = num_list / (sum(num_list[0:9]) / 10)
-                boundary = (0, 1.2)
-            elif method == "end":
-                normalized = num_list / (sum(num_list[len(num_list)-10:len(num_list)-1]) / 10)
-                boundary = (0.8, 2)
-            else:
-                sys.exit("Error: normalization failed")
-
-            normalized = self.outlier_filter(normalized, boundary)
-
+            normalized = num_list / (sum(num_list[0:9]) / 10)
             output.append(normalized)
 
         return output
@@ -119,17 +108,22 @@ class Profiling(DataPreparing):
             :param boundary: array 0=>min and 1=>max
             :return filtered 1d list of num
         ----------------------------------------- """
-        filtered = []
+        filtered_list = []
 
-        for num in temperature:
-            if num < boundary[0]:
-                filtered.append(boundary[0])
-            elif num > boundary[1]:
-                filtered.append(boundary[1])
-            else:
-                filtered.append(num)
+        for num_list in temperature:
+            filtered_num = []
+            for num in num_list:
 
-        return filtered
+                if num < boundary[0]:
+                    filtered_num.append(boundary[0])
+                elif num > boundary[1]:
+                    filtered_num.append(boundary[1])
+                else:
+                    filtered_num.append(num)
+
+            filtered_list.append(filtered_num)
+
+        return filtered_list
 
 
 class PreProfiling:
@@ -175,3 +169,111 @@ class PreProfiling:
 
         return rmsd
 
+
+class FindInvRadius:
+
+    @staticmethod
+    def plane_indicator(plane_list):
+
+        """ -----------------------------------------
+            version: 0.2
+            desc: define if list of nums (T(r_maj)) increase or decrease
+            :param plane_list: 1d list of num
+            :return indicator => 1: increase, -1: decrease, 0: flat
+        ----------------------------------------- """
+
+        compare_num = plane_list[0]
+        increase = []
+        decrease = []
+        stat_weight = 1 / len(plane_list)
+
+        for num in plane_list:
+
+            difference = num - compare_num
+            compare_num = num
+
+            if difference > 0:
+                increase.append(difference)
+            elif difference < 0:
+                decrease.append(difference)
+
+        indicator_increase = abs(sum(increase) * (len(increase) * stat_weight))
+        indicator_decrease = abs(sum(decrease) * (len(decrease) * stat_weight))
+
+        if indicator_increase > indicator_decrease:
+            indicator = 1
+        elif indicator_decrease > indicator_increase:
+            indicator = -1
+        else:
+            indicator = 0
+
+        return indicator
+
+    def inv_radius(self, temperature_list, window_width):
+
+        """ -----------------------------------------
+            version: 0.2
+            desc: define if list of nums increase or decrease
+            :param temperature_list: 2d array of nums normalised on 1
+            :param window_width: int val of len by which make plane indicating
+            :return main_candidate_index: value of the most probable index
+                    of channel with inversion radius
+        ----------------------------------------- """
+
+        temperature_list = np.transpose(temperature_list)
+        mean = sum(temperature_list[0]) / len(temperature_list[0])  # normalised on 1
+        area = int((len(temperature_list[0]) - (len(temperature_list[0]) % window_width)))
+        candidate_list = []
+        stat_weight = {}
+
+        for timeline, t_list in enumerate(temperature_list):
+            candidates = []
+            for i in range(window_width, area, window_width):
+
+                analysis_area = t_list[i:i + window_width]
+
+                """ Analysis only upward trends """
+                plane_area_direction = self.plane_indicator(analysis_area)
+                if plane_area_direction == 1:
+
+                    """ Analysis only analysis_area which have intersection with mean value"""
+                    upper_area = 0
+                    under_area = 0
+                    for t_analysis in analysis_area:
+                        upper_area = 1 if t_analysis > mean else upper_area
+                        under_area = 1 if t_analysis < mean else under_area
+
+                    """ Candidates => (range of points, temperature at each of point) """
+                    if upper_area == 1 and under_area == 1:
+                        candidates.append((range(i, i + window_width), analysis_area))
+                        stat_weight_to_update = (stat_weight[i] + 1) if i in stat_weight else 0
+                        stat_weight.update({i: stat_weight_to_update})
+
+            """ Candidate_list => (timeline with candidates, candidates) """
+            candidate_list.append((timeline, candidates))
+
+        search_area = max(stat_weight.items(), key=itemgetter(1))[0]
+
+        temperature_list = np.transpose(temperature_list)
+        main_candidate_index = self.sum_deviation(temperature_list[search_area:(search_area + window_width)], mean)
+        main_candidate_index = search_area + main_candidate_index
+
+        return main_candidate_index
+
+    @staticmethod
+    def sum_deviation(search_area, mean):
+
+        """ -----------------------------------------
+            version: 0.2
+            desc: calculate deviation from mean val and give index of channel
+            :param search_area: 2d array of nums normalised on 1 where can be channel with inv radius
+            :param mean: float mean val of temperature at the very beginning after norm on 1
+            :return index of channel with minimum deviation from mean that means
+                    that it is index of inversion radius
+        ----------------------------------------- """
+
+        deviation = []
+        for t_list in search_area:
+            deviation.append(sum(abs(t_list - mean)))
+
+        return deviation.index(min(deviation))
