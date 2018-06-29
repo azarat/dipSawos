@@ -4,6 +4,7 @@ import numpy as np
 from operator import itemgetter
 import os
 from scipy import signal as signal_processor
+import matplotlib.patches as patches
 
 # IMPORTANT to be declared for 3d plots
 from mpl_toolkits.mplot3d import Axes3D
@@ -14,9 +15,9 @@ from matplotlib.ticker import LinearLocator, FormatStrFormatter
 class ViewData:
     processing = dt.PreProfiling()
     channel_from = 0
-    channel_to = 80
+    channel_to = 70
     # window_width_val = 500
-    window_width_val = 50  # time smoothing
+    window_width_val = 81  # time smoothing
     window_width_rad_val = 10  # radius smoothing
     window_func = 'triang'
     boundary = (0.75, 1.5)
@@ -24,12 +25,6 @@ class ViewData:
 
     def __init__(self):
         print("Input: V02")
-
-        # run_program = input()
-        # if run_program == "V1":
-        #     self.main_v1()
-        # elif run_program == "V2":
-        # self.build_plots_to_find_inversion_radius()
         self.build_plots_to_find_collapse_time_duration()
 
     def build_plots_to_find_collapse_time_duration(self):
@@ -41,7 +36,7 @@ class ViewData:
             status: IN DEV
         ----------------------------------------- """
 
-        for dis in range(25, 26):
+        for dis in range(32, 33):
 
             print("Discharge: " + str(dis))
 
@@ -62,7 +57,6 @@ class ViewData:
 
             """ Ordering by R_maj """
             temperature_list_original = data.order_by_r_maj(data.temperature_original)[self.channel_from:self.channel_to]
-            # public_temperature_ordered_list = data.order_by_r_maj(data_public.temperature_original)[channel_from:channel_to]
             # # # # # # # # # # # # # # # # # # # # # # # #
 
             """
@@ -74,7 +68,6 @@ class ViewData:
             # temperature_list = temperature_list_original  # skip filtration
 
             """ Calibrate (Normalization on 1) """
-            temperature_list_original_clear = data.normalization(temperature_list_original)
             temperature_list_clear = data.normalization(temperature_list)
             temperature_list = temperature_list_clear
             # # # # # # # # # # # # # # # # # # # # # # # #
@@ -85,35 +78,39 @@ class ViewData:
             temperature_list = np.transpose(temperature_list)
             # # # # # # # # # # # # # # # # # # # # # # # #
 
+            """
+            Cut outliers
+            WARNING: Have influence on inv. rad. detection (more cut => less val of outlier need)
+            """
+            temperature_list = data.outlier_filter_std_deviation(temperature_list, 2, 1)
+            # temperature_list = data.outlier_filter(temperature_list, self.boundary)
+            # # # # # # # # # # # # # # # # # # # # # # # #
+
             """ Find Inversion Radius """
             """ Method 1 - identify closest channel """
             inv_radius_channel_index = dt.FindInvRadius().inv_radius(temperature_list, 5, 0.01)
             inv_radius_val = r_maj[inv_radius_channel_index] if inv_radius_channel_index > 0 else 0
             inv_radius_channel = ('{:.4f}'.format(inv_radius_val), inv_radius_channel_index)
+            # inv_radius_channel_index = 0
+            # inv_radius_channel = (0, 0)
             print("Inversion radius M1: " + str(inv_radius_channel))
-            self.build_temperature_rmaj_series_plot(temperature_list, self.window_width_val, r_maj[0:len(temperature_list)], discharge=dis, inv_rad_c=inv_radius_channel, method="M1")
+            # self.build_temperature_rmaj_series_plot(temperature_list, self.window_width_val, r_maj[0:len(temperature_list)], discharge=dis, inv_rad_c=inv_radius_channel, method="M1")
+            self.build_temperature_rmaj_series_plot(temperature_list, self.window_width_val, r_maj[0:len(temperature_list)], discharge=dis, inv_rad_c=inv_radius_channel)
 
             self.build_temperature_rmaj_time_3d_surface(temperature_list, r_maj[0:len(temperature_list)], time_list[0:len(temperature_list[0])], window_width=self.window_width_val, discharge=dis)
             # self.build_temperature_rmaj_time_3d_surface_perspective(temperature_list, r_maj[0:len(temperature_list)], time_list[0:len(temperature_list[0])], discharge=dis)
 
-            # temperature_list = temperature_list_clear
-            collapse_duration_time = dt.FindCollapseDuration().collapse_duration(temperature_list, 0.02, inv_radius_channel_index)
+            collapse_duration_time = dt.FindCollapseDuration().collapse_duration(temperature_list, 0.02, inv_radius_channel_index, 7)
             print("Time segment: ", time_list[collapse_duration_time[0]], " ", time_list[collapse_duration_time[1]])
             print("Time duration: ", (time_list[collapse_duration_time[1]] - time_list[collapse_duration_time[0]]) * 1000, " ms")
 
             self.build_temperature_rmaj_single_plot(
-                temperature=temperature_list,
-                temperature_original=temperature_list_original_clear,
-                channels_pos=r_maj,
-                window_width=self.window_width_val,
-                channel_to_compare=24,
-                time_list=time_list,
-                channel_order_list=channel_order_list,
-                window_name=self.window_func)
+                temperature_list, self.window_func, self.window_width_val, time_list,
+                time_limits=collapse_duration_time, discharge=dis)
 
-            # plt.close("all")
+            plt.close("all")
 
-        plt.show()
+        # plt.show()
 
         return 1
 
@@ -269,7 +266,7 @@ class ViewData:
         cbs = fig.colorbar(cs)
         cbs.ax.set_ylabel('Temperature (eV)', fontsize=17)
 
-        # fig.savefig('results/3d_au_0_80/tokamat_colormap_dis' + str(kwargs['discharge']) + '_w' + str(kwargs['window_width']) + '.png')
+        fig.savefig('results/3d_au_0_80/tokamat_colormap_dis' + str(kwargs['discharge']) + '_w' + str(kwargs['window_width']) + '.png')
 
         return 1
 
@@ -308,15 +305,12 @@ class ViewData:
         ax.zaxis.set_major_locator(LinearLocator(10))
         ax.zaxis.set_major_formatter(FormatStrFormatter('%.02f'))
 
-        # fig.savefig('results/3d_au_0_48/tokamat_perspective_plasma_dis' + str(kwargs['discharge']) + '.png')
+        fig.savefig('results/3d_au_0_80/tokamat_perspective_dis' + str(kwargs['discharge']) + '.png')
 
         return 1
 
     @staticmethod
-    def build_temperature_rmaj_single_plot(
-        temperature, temperature_original, window_name,
-        channels_pos, window_width, time_list,
-        channel_to_compare, channel_order_list):
+    def build_temperature_rmaj_single_plot( temperature, window_name, window_width, time_list, **kwargs):
         """ -----------------------------------------
             version: 0.2
             :param temperature: 2d array of filtered and calibrated temperature (list of nums)
@@ -345,7 +339,35 @@ class ViewData:
         #     color='c'
         # )
 
-        for channel in range(0, 70, 5):
+        """ Time limits of collapse """
+        mix_temp_list = []
+        for t_list in temperature:
+            for t in t_list:
+                mix_temp_list.append(t)
+
+        max_temp = max(mix_temp_list)
+        min_temp = min(mix_temp_list)
+
+        # axes.plot(
+        #     [time_list[kwargs['time_limits'][0]], time_list[kwargs['time_limits'][0]]],
+        #     [min_temp, max_temp],
+        #     color='r'
+        # )
+        #
+        # axes.plot(
+        #     [time_list[kwargs['time_limits'][1]], time_list[kwargs['time_limits'][1]]],
+        #     [min_temp, max_temp],
+        #     color='r'
+        # )
+
+        rect = patches.Rectangle((time_list[kwargs['time_limits'][0]], min_temp),
+                                 (time_list[kwargs['time_limits'][1]] - time_list[kwargs['time_limits'][0]]),
+                                 max_temp - min_temp, linewidth=0, edgecolor='r', facecolor='r', alpha=0.2)
+
+        axes.add_patch(rect)
+        # # # # # # # # # # # # # # # # # # # # # #
+
+        for channel in range(0, 65, 5):
             axes.plot(
                 # range(0, len(temperature[channel_to_compare])),
                 time_list[0:len(temperature[channel])],
@@ -354,11 +376,12 @@ class ViewData:
             )
 
         axes.set(xlabel='Time (seconds)', ylabel='T (eV)',
-                 title='Original signal vs filtered, "'
+                 title='Signal, "'
                        + window_name + '" wind. func., '
-                       + str(channel_order_list[channel_to_compare]) + ' channel, 25 discharge, '
+                       + ' 25 discharge, ' +
                        'wind. width ' + str(window_width) +
-                       ', R_maj = ' + str(channels_pos[channel_to_compare]))
+                        ', Collapse duration = ' + str('{:.4f}'.format((time_list[kwargs['time_limits'][1]] - time_list[kwargs['time_limits'][0]]) * 1000)) + "ms")
+
 
         for item in ([axes.title, axes.xaxis.label, axes.yaxis.label] +
                      axes.get_xticklabels() + axes.get_yticklabels()):
@@ -368,23 +391,13 @@ class ViewData:
 
         # self.align_axes(axes)
 
-        directory = 'results/originals/d25/' \
-                    'o' + str(channel_to_compare) + \
-                    '_c' + str(channel_order_list[channel_to_compare]) + '/' + \
-                    str(window_name) + '/'
-        # if not os.path.exists(directory):
-        #     os.makedirs(directory)
-        #
-        # fig.savefig(directory + 'single_d03_c' +
-        #             str(channel_order_list[channel_to_compare]) +
-        #             '_w' + str(window_width) +
-        #             '_WF' + window_name +
-        #             '.png')
-        print(directory + 'single_d03_c' +
-                    str(channel_order_list[channel_to_compare]) +
-                    '_w' + str(window_width) +
-                    '_WF' + window_name +
-                    '.png')
+        directory = 'results/T_time_series/'
+
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+
+        fig.savefig(directory + 'dis' + str(kwargs['discharge']) +
+                    '_T_time_series_w' + str(window_width) + '.png')
 
         return 1
 
@@ -498,15 +511,15 @@ class ViewData:
                      axes.get_xticklabels() + axes.get_yticklabels()):
             item.set_fontsize(17)
 
-        # method = ("_" + str(kwargs['method'])) if 'method' in kwargs else ''
-        #
-        # directory = 'results/T_Rmaj_series' + str(method) + '/'
-        #
-        # if not os.path.exists(directory):
-        #     os.makedirs(directory)
-        #
-        # fig.savefig(directory + 'dis' + str(kwargs['discharge']) +
-        #             '_T_Rmaj_series_c0080_w' + str(window_width) + '.png')
+        method = ("_" + str(kwargs['method'])) if 'method' in kwargs else ''
+
+        directory = 'results/T_Rmaj_series' + str(method) + '/'
+
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+
+        fig.savefig(directory + 'dis' + str(kwargs['discharge']) +
+                    '_T_Rmaj_series_c0080_w' + str(window_width) + '.png')
 
         return 1
 

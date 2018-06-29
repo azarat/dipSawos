@@ -181,7 +181,7 @@ class PreProfiling:
 
 class FindCollapseDuration:
 
-    def collapse_duration(self, temperature_list, flat_outlier_limitation, inv_radius_channel):
+    def collapse_duration(self, temperature_list, flat_outlier_limitation, inv_radius_channel, std_multiplicity):
 
         """ -----------------------------------------
             version: 0.2
@@ -193,12 +193,12 @@ class FindCollapseDuration:
         ----------------------------------------- """
 
         collapse_start_time = self.collapse_start(temperature_list, flat_outlier_limitation)
-        collapse_end_time = self.collapse_end(temperature_list, inv_radius_channel)
+        collapse_end_time = self.collapse_end(temperature_list, inv_radius_channel, std_multiplicity)
 
         return (collapse_start_time, collapse_end_time)
 
     @staticmethod
-    def collapse_end(temperature_list, inv_radius_channel):
+    def collapse_end(temperature_list, inv_radius_channel, std_multiplicity):
 
         """ -----------------------------------------
             version: 0.2
@@ -225,7 +225,7 @@ class FindCollapseDuration:
                 analysis_area = temperature_rev[0:i]
 
                 mean, data_std = np.mean(analysis_area), np.std(analysis_area)
-                cut_off = data_std * 7
+                cut_off = data_std * std_multiplicity
                 lower, upper = mean - cut_off, mean + cut_off
 
                 if t < lower or t > upper:
