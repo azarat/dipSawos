@@ -1,6 +1,21 @@
 from scipy.io import loadmat
 
 
+class Model:
+
+    @staticmethod
+    def load(filename):
+        """ -----------------------------------------
+             version: 0.3
+             desc: load data from matlab
+             :param filename: string val
+             :return mat raw type ?
+         ----------------------------------------- """
+
+        data = loadmat(filename)
+        return data
+
+
 class LoadDB:
     internal_time = 0
     internal_temperature = 0

@@ -5,27 +5,169 @@ from operator import itemgetter
 import os
 from scipy import signal as signal_processor
 import matplotlib.patches as patches
+import pandas as pd
 
 # IMPORTANT to be declared for 3d plots
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm, rc
 from matplotlib.ticker import LinearLocator, FormatStrFormatter
 
+import scipy.io as io
+import time
+
 
 class ViewData:
     processing = dt.PreProfiling()
     channel_from = 0
-    channel_to = 70
+    channel_to = 92
     # window_width_val = 500
-    window_width_val = 81  # time smoothing
-    window_width_rad_val = 10  # radius smoothing
+    window_width_val = 500  # time smoothing
+    window_width_rad_val = 3  # radius smoothing
     window_func = 'triang'
     boundary = (0.75, 1.5)
     # boundary = (-100, 100)
 
     def __init__(self):
         print("Input: V02")
-        self.build_plots_to_find_collapse_time_duration()
+        # self.build_plots_to_find_inversion_radius()
+        # self.build_plots_to_find_collapse_time_duration()
+        # self.extra_normalization()
+        self.export_inversion_radius()
+
+    def export_inversion_radius(self):
+        """ -----------------------------------------
+            version: 0.3
+            desc: export inv radius to train neural network
+                  save to mat files
+            :return 1
+
+            status: IN DEV
+        ----------------------------------------- """
+
+        """ Extract data from MATLAB database """
+        controller = dt.MachineLearning()
+        data = controller.ml_load('machine_learning/ECE_data_tS500_n1_mF5_uDR.mat')
+        dis_count = len(data['ece_data'])  # 32
+        # # # # # # # # # # # # # # # # # # # # # # # #
+
+        for dis in range(dis_count):
+            temperature_list = np.transpose(data['ece_data'][dis])[:60]
+
+            """ IMPORTANT to remove sawtooth behavior T(r_maj) """
+            # temperature_list = self.processing.filter(
+            #     np.transpose(temperature_list), self.window_width_rad_val, self.window_func)
+            # temperature_list = np.transpose(temperature_list)
+            # # # # # # # # # # # # # # # # # # # # # # # #
+
+            """ Find Inversion Radius """
+            """ Method 1 - identify closest channel """
+            inv_radius_channel = dt.FindInvRadius().inv_radius(temperature_list, 5, 0.01)
+            print("Inversion radius M1: " + str(inv_radius_channel))
+            # self.build_temperature_rmaj_series_plot(temperature_list, self.window_width_val, range(len(temperature_list)), discharge=dis, inv_rad_c=inv_radius_channel, method="M1")
+
+            # plt.close("all")
+
+        # plt.show()
+
+        return 1
+
+    def extra_normalization(self):
+        """ -----------------------------------------
+            version: 0.3
+            desc:
+            :return 1
+
+            status: IN DEV
+            3 4 12 8 18 21 22
+        ----------------------------------------- """
+
+        temperature_list_dis = []
+        list_dis = []
+        start_time = time.time()
+
+        for dis in range(3, 4):
+            start_time_internal = time.time()
+
+            print("Discharge: " + str(dis))
+
+            if dis == 31 or dis in range(11, 24) or dis in range(47, 64):
+                continue
+
+            """ Extract data from MATLAB database """
+            data = dt.Profiling()
+            data.load(discharge=dis, source='real')
+            # # # # # # # # # # # # # # # # # # # # # # # #
+
+            """ Sort R_maj index and time lists by R_maj value """
+            r_maj = [channel[1] for channel in sorted(data.channels_pos.items(), key=itemgetter(1))][self.channel_from:self.channel_to]
+            channel_order_list = {index: channel[0] for index, channel in enumerate(sorted(data.channels_pos.items(), key=itemgetter(1)))}
+            time_list = data.time_original
+            """ Same vars in a.u. units """
+
+            """ Ordering by R_maj """
+            temperature_list_original = data.order_by_r_maj(data.temperature_original)[self.channel_from:self.channel_to]
+            # # # # # # # # # # # # # # # # # # # # # # # #
+
+            """ Filtering T(t), i.e., smoothing """
+            temperature_list = self.processing.filter(
+                temperature_list_original, self.window_width_val, self.window_func)
+            # temperature_list = temperature_list_original  # skip filtration
+
+            """ Calibrate (Normalization on 1) """
+            temperature_list = data.normalization(temperature_list)
+            # # # # # # # # # # # # # # # # # # # # # # # #
+
+            """ IMPORTANT to remove sawtooth behavior T(r_maj) """
+            # temperature_list = self.processing.filter(
+            #     np.transpose(temperature_list), self.window_width_rad_val, self.window_func)
+            temperature_list = np.transpose(temperature_list)  # skip filtration
+            # # # # # # # # # # # # # # # # # # # # # # # #
+
+            """ Median filtering IMPORTANT to remove outliers T(r_maj) """
+            window_size = 100
+            outliers_list = np.array(np.transpose(temperature_list)).tolist()
+            temperature_list_filtered = []
+
+            for t_list in outliers_list:
+                temperature_filtered = []
+                for ii in range(0, len(t_list), window_size):
+                    temperature_filtered += self.processing.median_filtered(np.asanyarray(t_list[ii: ii + window_size]), 3).tolist()
+                temperature_list_filtered.append(temperature_filtered)
+            temperature_list = np.transpose(temperature_list_filtered)
+
+            window_size = 5
+            outliers_list = np.array(temperature_list).tolist()
+            temperature_list_filtered = []
+
+            for t_list in outliers_list:
+                temperature_filtered = []
+                for ii in range(0, len(t_list), window_size):
+                    temperature_filtered += self.processing.median_filtered(np.asanyarray(t_list[ii: ii + window_size]), 3).tolist()
+                temperature_list_filtered.append(temperature_filtered)
+            # temperature_list_filtered = temperature_list  # skip filtration
+            # # # # # # # # # # # # # # # # # # # # # # # #
+
+            plt.plot(temperature_list_filtered[500], label="500")
+            plt.plot(temperature_list_filtered[1000], label="1000")
+            plt.plot(temperature_list_filtered[1500], label="1500")
+            plt.plot(temperature_list_filtered[2000], label="2000")
+            plt.legend()
+            plt.show()
+            temperature_list_dis.append(temperature_list_filtered)
+            list_dis.append(dis)
+
+            print("--- %s seconds ---" % (time.time() - start_time_internal))
+
+        data_to_save = {
+            'ece_data': {
+                'discharge': list_dis,
+                'signal': temperature_list_dis
+            },
+            'description': 'ECE_data_timeSmoothed500_normalized1_medianFiltered5_unsortedDisRemoved'}
+        # io.savemat('machine_learning/ECE_data_tS500_n1_mF5_uDR.mat', data_to_save)
+        print("------ %s seconds ------" % (time.time() - start_time))
+
+        return 1
 
     def build_plots_to_find_collapse_time_duration(self):
         """ -----------------------------------------
@@ -204,37 +346,6 @@ class ViewData:
         return 1
 
     @staticmethod
-    def build_filter_windows(wind_list):
-        """ -----------------------------------------
-            version: 0.1
-            :return 1
-        ----------------------------------------- """
-        for index, name in enumerate(wind_list):
-            fig, axes = plt.subplots()
-            fig.set_size_inches(15, 8)
-
-            window = signal_processor.get_window(name, 100)
-
-            axes.plot(
-                range(0, len(window)),
-                window
-            )
-
-            axes.set(xlabel='', ylabel='',
-                     title=name)
-            axes.grid(alpha=0.2)
-            plt.tight_layout()
-
-            directory = 'results/filters/'
-
-            if not os.path.exists(directory):
-                os.makedirs(directory)
-
-            # fig.savefig(directory + 'filters_' + name + '.png')
-
-        return 1
-
-    @staticmethod
     def build_temperature_rmaj_time_3d_surface(temperature_list, r_maj, time_list, **kwargs):
         """ -----------------------------------------
             version: 0.2
@@ -266,7 +377,12 @@ class ViewData:
         cbs = fig.colorbar(cs)
         cbs.ax.set_ylabel('Temperature (eV)', fontsize=17)
 
-        fig.savefig('results/3d_au_0_80/tokamat_colormap_dis' + str(kwargs['discharge']) + '_w' + str(kwargs['window_width']) + '.png')
+        directory = 'results/extra_normalization/3d_au_0_80/'
+
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+
+        fig.savefig(directory + 'tokamat_colormap_dis' + str(kwargs['discharge']) + '_w' + str(kwargs['window_width']) + '.png')
 
         return 1
 
@@ -305,7 +421,13 @@ class ViewData:
         ax.zaxis.set_major_locator(LinearLocator(10))
         ax.zaxis.set_major_formatter(FormatStrFormatter('%.02f'))
 
-        fig.savefig('results/3d_au_0_80/tokamat_perspective_dis' + str(kwargs['discharge']) + '.png')
+        directory = 'results/extra_normalization/3d_au_0_80/'
+
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+
+        fig.savefig(
+            directory + 'tokamat_perspective_dis' + str(kwargs['discharge']) + '.png')
 
         return 1
 
@@ -360,11 +482,12 @@ class ViewData:
         #     color='r'
         # )
 
-        rect = patches.Rectangle((time_list[kwargs['time_limits'][0]], min_temp),
-                                 (time_list[kwargs['time_limits'][1]] - time_list[kwargs['time_limits'][0]]),
-                                 max_temp - min_temp, linewidth=0, edgecolor='r', facecolor='r', alpha=0.2)
+        if kwargs['time_limits'] != 0:
+            rect = patches.Rectangle((time_list[kwargs['time_limits'][0]], min_temp),
+                                     (time_list[kwargs['time_limits'][1]] - time_list[kwargs['time_limits'][0]]),
+                                     max_temp - min_temp, linewidth=0, edgecolor='r', facecolor='r', alpha=0.2)
 
-        axes.add_patch(rect)
+            axes.add_patch(rect)
         # # # # # # # # # # # # # # # # # # # # # #
 
         for channel in range(0, 65, 5):
@@ -375,12 +498,15 @@ class ViewData:
                 color='b'
             )
 
+        collapse_duration_txt = '{:.4f}'.format((time_list[kwargs['time_limits'][1]] -
+                                                 time_list[kwargs['time_limits'][0]]) * 1000) if kwargs['time_limits'] != 0 else 0
+
         axes.set(xlabel='Time (seconds)', ylabel='T (eV)',
                  title='Signal, "'
                        + window_name + '" wind. func., '
-                       + ' 25 discharge, ' +
+                       + ' ' + str(kwargs['discharge']) + ' discharge, ' +
                        'wind. width ' + str(window_width) +
-                        ', Collapse duration = ' + str('{:.4f}'.format((time_list[kwargs['time_limits'][1]] - time_list[kwargs['time_limits'][0]]) * 1000)) + "ms")
+                        ', Collapse duration = ' + str(collapse_duration_txt) + "ms")
 
 
         for item in ([axes.title, axes.xaxis.label, axes.yaxis.label] +
@@ -389,58 +515,13 @@ class ViewData:
 
         axes.grid()
 
-        # self.align_axes(axes)
-
-        directory = 'results/T_time_series/'
+        directory = 'results/extra_normalization/T_time_series/'
 
         if not os.path.exists(directory):
             os.makedirs(directory)
 
         fig.savefig(directory + 'dis' + str(kwargs['discharge']) +
                     '_T_time_series_w' + str(window_width) + '.png')
-
-        return 1
-
-    def build_temperature_rmaj_single_plot_originals(self,
-                                           temperature_original, channels_pos, time_list,
-                                           channel_to_compare, channel_order_list):
-
-        """ -----------------------------------------
-            version: 0.1
-            :return 1
-        ----------------------------------------- """
-        """
-        Build single plot T(t) with fixed r_maj
-        CAUTION: inverting plasma radius is near 48/49 channel (in ordered unit list)
-        CAUTION: channel_to_check means temperature set, ordered by r_maj
-        """
-
-        fig, axes = plt.subplots()
-        fig.set_size_inches(15, 8)
-
-        axes.plot(
-            # range(0, len(temperature_original[channel_to_compare])),
-            time_list[channel_to_compare][0:len(temperature_original[channel_to_compare])],
-            temperature_original[channel_to_compare]
-        )
-
-        axes.set(xlabel='Time (seconds)', ylabel='T (eV)',
-                 title='Original signal, '
-                       + str(channel_order_list[channel_to_compare]) + ' channel, 25 discharge, R_maj = '
-                       + str(channels_pos[channel_to_compare]))
-        axes.grid()
-
-        # self.align_axes(axes)
-
-        directory = 'results/originals/d25/' \
-                    'o' + str(channel_to_compare) + \
-                    '_c' + str(channel_order_list[channel_to_compare]) + '/'
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-
-        # fig.savefig(directory + 'single_d25_c' +
-        #             str(channel_order_list[channel_to_compare]) +
-        #             '.png')
 
         return 1
 
@@ -495,7 +576,6 @@ class ViewData:
             if time in range(0, plot_limit, 100):
                 axes.plot(
                     r_maj,
-                    # range(0, len(temperature)),
                     temperature
                 )
 
@@ -513,100 +593,12 @@ class ViewData:
 
         method = ("_" + str(kwargs['method'])) if 'method' in kwargs else ''
 
-        directory = 'results/T_Rmaj_series' + str(method) + '/'
+        directory = 'results/ml/T_Rmaj_series' + str(method) + '/'
 
         if not os.path.exists(directory):
             os.makedirs(directory)
 
         fig.savefig(directory + 'dis' + str(kwargs['discharge']) +
-                    '_T_Rmaj_series_c0080_w' + str(window_width) + '.png')
-
-        return 1
-
-    def info_losses_wind_func(self, **kwargs):
-        """ -----------------------------------------
-            version: 0.1
-            :return 1
-        ----------------------------------------- """
-        """
-        Compare all types of window function
-        """
-
-        temperature_original = kwargs['temperature_original']
-        time = kwargs['time_list'][kwargs['channel_to_compare']]
-
-        if temperature_original and type(temperature_original) is dict:
-            temperature_original = self.processing.dict_to_list(temperature_original)
-
-        sum_deviation = self.processing.calculate_deviation(
-            kwargs['window_width'],
-            temperature_original,
-            kwargs['analyze_window'],
-            kwargs['channel_to_compare'])
-
-        """ Plot compare deviation """
-        fig, axes = plt.subplots(2, 1)
-        fig.set_size_inches(10, 8)
-
-        y_pos = np.arange(len(kwargs['analyze_window']))
-
-        axes[0].barh(y_pos, sum_deviation)
-        axes[0].set_yticks(y_pos)
-        axes[0].set_yticklabels(kwargs['analyze_window'])
-
-        axes[0].set(xlabel='RMSD (eV)', ylabel='Window type',
-                    title='RMSD, ' + str(kwargs['channel_order_list'][kwargs['channel_to_compare']])
-                          + ' channel, 25 discharge, '
-                            'wind. width ' + str(kwargs['window_width']) +
-                          ', R_maj = ' + str(kwargs['channels_pos'][kwargs['channel_to_compare']]))
-        axes[0].grid()
-        axes[0].set_xlim(
-            left=(min(sum_deviation) - min(sum_deviation) / 100),
-            right=(max(sum_deviation) + min(sum_deviation) / 100))
-
-        """ Plot compared T(t) """
-        axes[1].plot(
-            # range(0, len(temperature_original[kwargs['channel_to_compare'] - 1])),
-            kwargs['time_list'][kwargs['channel_to_compare']],
-            temperature_original[kwargs['channel_to_compare']]
-        )
-
-        custom_grid_time = [time[i] for i in range(len(time)) if (i % kwargs['window_width'] == 0)]
-
-        axes[1].set_xticks(custom_grid_time, minor=True)
-        axes[1].xaxis.grid(True, which='minor')
-
-        axes[1].set(xlabel='Time (seconds)', ylabel='Temperature (eV)',
-                    title='')
-
-        # axes[1].grid()
-
-        directory = 'results/RMSD/d25/' \
-                    'o' + str(kwargs['channel_to_compare']) + \
-                    '_c' + str(kwargs['channel_order_list'][kwargs['channel_to_compare']]) + '/'
-        # if not os.path.exists(directory):
-        #     os.makedirs(directory)
-
-        # fig.savefig(directory + 'RMSD_d25_c' +
-        #             str(kwargs['channel_order_list'][kwargs['channel_to_compare']]) +
-        #             '_w' + str(kwargs['window_width']) +
-        #             '.png')
-        return 1
-
-    @staticmethod
-    def align_axes(axes):
-        """ -----------------------------------------
-            version: 0.1
-            :return 1
-        ----------------------------------------- """
-        label = axes.xaxis.get_label()
-        x_lab_pos, y_lab_pos = label.get_position()
-        label.set_position([1.0, y_lab_pos])
-        label.set_horizontalalignment('right')
-
-        label = axes.yaxis.get_label()
-        x_lab_pos, y_lab_pos = label.get_position()
-        label.set_position([x_lab_pos, .95])
-        label.set_verticalalignment('top')
+                    '_T_Rmaj_series_w' + str(window_width) + '.png')
 
         return 1

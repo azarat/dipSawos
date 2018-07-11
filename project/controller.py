@@ -159,6 +159,19 @@ class Profiling(Controller):
 class PreProfiling:
 
     @staticmethod
+    def median_filtered(signal, threshold=3):
+        """
+        signal: is numpy array-like
+        returns: signal, numpy array
+        """
+        difference = np.abs(signal - np.median(signal))
+        median_difference = np.median(difference)
+        s = 0 if median_difference == 0 else difference / float(median_difference)
+        mask = s > threshold
+        signal[mask] = np.median(signal)
+        return signal
+
+    @staticmethod
     def filter(input_signal, window_width, window_name):
         window = signal_processor.get_window(window_name, window_width)
         output_signal = []
@@ -314,7 +327,7 @@ class FindInvRadius:
         ----------------------------------------- """
 
         temperature_list = np.transpose(temperature_list)
-        mean = sum(temperature_list[0]) / len(temperature_list[0])  # normalised on 1
+        mean = np.mean(temperature_list[0])
         area = int((len(temperature_list[0]) - (len(temperature_list[0]) % window_width)))
         candidate_list = []
         stat_weight = {}
@@ -322,6 +335,7 @@ class FindInvRadius:
         for timeline, t_list in enumerate(temperature_list):
             flat_outlier = sum(abs(t_list - mean)) / len(t_list)
 
+            # print(flat_outlier, ' ', flat_outlier_limitation)
             if flat_outlier > flat_outlier_limitation:
                 candidates = []
                 plane_area_direction_prev = 1
@@ -339,8 +353,9 @@ class FindInvRadius:
                         for t_analysis in analysis_area:
                             upper_area = 1 if t_analysis > mean else upper_area
                             under_area = 1 if t_analysis < mean else under_area
+                            # print(under_area, ' ', upper_area)
 
-                        """ Candidates => (range of points, temperature at each of point) """
+                        """ Candidates => (range of points, temperature at each point) """
                         if upper_area == 1 and under_area == 1:
                             candidates.append((range(i, i + window_width), analysis_area))
                             stat_weight_to_update = (stat_weight[i] + 1) if i in stat_weight else 0
@@ -495,3 +510,66 @@ class FindInvRadius:
             deviation.append(sum(abs(t_list - mean)))
 
         return deviation.index(min(deviation))
+
+
+class MachineLearning:
+
+    @staticmethod
+    def ml_load(filename):
+        """ -----------------------------------------
+             version: 0.3
+             desc: load data from matlab with previously prepared data
+             :param filename: string val
+             :return nd array
+         ----------------------------------------- """
+        db = db_model.Model()
+        mat = db.load(filename)
+
+        data = {
+            'ece_data': mat['ece_data'][0, 0]['signal'][0, :],
+            'discharge': mat['ece_data'][0, 0]['discharge'][0, :]
+        }
+
+        return data
+
+    def ml_find_outliers(self):
+        import pandas as pd
+        import matplotlib.pyplot as plt
+
+        dataset = pd.read_csv('out.csv').values
+        dataset_test = pd.read_csv('out_test.csv').values
+
+        from sklearn.svm import SVC
+
+        X_train = (dataset[40:, 1500:1550])
+        y_train = []
+        for i in range(9):
+            y_train.append(0)
+        y_train.append(1)
+
+        plt.plot(dataset_test[:, 1500])
+        plt.show()
+
+        X_test = (dataset_test[:, 1600:1650])
+        # print(len(X_test))
+        # exit()
+        y_test = []
+        for i in range(49):
+            y_test.append(0)
+        y_test.append(1)
+
+        this_C = 1.0
+        clf = SVC(kernel='linear', C=this_C).fit(X_train, y_train)
+        # print('XLF Lag1 dataset')
+        # print('Accuracy of Linear SVC classifier on training set: {:.2f}'
+        #  .format(clf.score(X_train, y_train)))
+        # print('Accuracy of Linear SVC classifier on test set: {:.2f}'
+        #  .format(clf.score(X_test, y_test)))
+
+        return clf.predict(X_test)
+
+    def ml_find_inv_radius(self):
+        pass
+
+    def ml_find_collapse_duration(self):
+        pass
