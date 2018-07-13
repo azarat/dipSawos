@@ -194,7 +194,7 @@ class PreProfiling:
 
 class FindCollapseDuration:
 
-    def collapse_duration(self, temperature_list, flat_outlier_limitation, inv_radius_channel, std_multiplicity):
+    def collapse_duration(self, temperature_list, flat_outlier_limitation, inv_radius_channel, dynamic_outlier_limitation):
 
         """ -----------------------------------------
             version: 0.2
@@ -205,71 +205,104 @@ class FindCollapseDuration:
             :return list with int val of indexes in time_list
         ----------------------------------------- """
 
-        collapse_start_time = self.collapse_start(temperature_list, flat_outlier_limitation)
-        collapse_end_time = self.collapse_end(temperature_list, inv_radius_channel, std_multiplicity)
+        collapse_start_time = self.collapse_start(temperature_list, inv_radius_channel)
+        collapse_end_time = self.collapse_end(temperature_list, inv_radius_channel, collapse_start_time)
 
         return (collapse_start_time, collapse_end_time)
 
     @staticmethod
-    def collapse_end(temperature_list, inv_radius_channel, std_multiplicity):
+    def collapse_end(temperature_list, inv_radius_channel, start):
 
         """ -----------------------------------------
-            version: 0.2
+            version: 0.3
             desc: search time point at which end Precursor + Fast Phase
             :param temperature_list: 2d list of num
             :return int val of index in time_list
         ----------------------------------------- """
 
-        collapse_list = []
+        if inv_radius_channel == 0:
+            inv_radius_channel = 60
 
-        for channel, temperature in enumerate(temperature_list):
+        start = 700
 
-            if channel > inv_radius_channel:
-                continue
+        temperature_list = np.transpose(temperature_list[:inv_radius_channel])[::-1]
 
-            collapse_end_time = 0
+        std = []
+        for t in range(len(temperature_list)):
+            std.append(np.std(temperature_list[t]))
 
-            temperature_rev = temperature[::-1]
-            for i, t in enumerate(temperature_rev):
+        colerator = []
+        cor_prev = 0
+        end = 0
+        end_up = 0
+        end_down = 10000000
+        indicator_up = 0
+        indicator_down = 0
+        for val_i, val in enumerate(std):
+            if val_i == 0:
+                cor_prev = val
+            else:
+                cor = cor_prev / val
+                colerator.append(cor)
 
-                if i < 10:
-                    continue
+                if val_i == start:
+                    indicator_up = (max(colerator) + (np.std(colerator) * 5))
+                    indicator_down = (min(colerator) - (np.std(colerator) * 3))
 
-                analysis_area = temperature_rev[0:i]
+                if cor > indicator_up > 0:
+                    if end_up == 0:
+                        end_up = val_i
+                        # print(end_up)
 
-                mean, data_std = np.mean(analysis_area), np.std(analysis_area)
-                cut_off = data_std * std_multiplicity
-                lower, upper = mean - cut_off, mean + cut_off
+                if cor < indicator_down > 0:
+                    if end_down == 10000000:
+                        end_down = val_i
+                        # print(end_down)
 
-                if t < lower or t > upper:
-                    collapse_end_time = i
-                    break
+                if end_down < end_up:
+                    end = end_down
+                else:
+                    end = end_up
 
-            if collapse_end_time > 0:
-                collapse_list.append(collapse_end_time)
+                cor_prev = val
 
-        return len(temperature_list[0]) - min(collapse_list)
+        # print(end)
+        end = len(std) - end
+
+        # inds_up = [indicator_up for x in colerator]
+        # inds_down = [indicator_down for x in colerator]
+        # import matplotlib.pyplot as plt
+        # fig, ax = plt.subplots(1, 1)
+        # ax.plot(inds_up)
+        # ax.plot(inds_down)
+        # ax.plot(colerator)
+        # plt.show()
+        # exit()
+
+        return end
 
     @staticmethod
-    def collapse_start(temperature_list, flat_outlier_limitation):
+    def collapse_start(temperature_list, r_inv_index):
 
         """ -----------------------------------------
-            version: 0.2
+            version: 0.3
             desc: search time point at which start Precursor Phase
             :param temperature_list: 2d list of num
             :param flat_outlier_limitation: float val of min deviation which indicate start index
             :return int val of index in time_list
         ----------------------------------------- """
 
-        temperature_list = np.transpose(temperature_list)
-        mean = sum(temperature_list[0]) / len(temperature_list[0])
+        temperature_list = np.transpose(temperature_list[:60])
+
+        std = []
+        for t in range(700):
+            std.append(np.std(temperature_list[t]))
+        max_std = max(std)
+
         start = 0
-
-        for timeline, t_list in enumerate(temperature_list):
-            flat_outlier = sum(abs(t_list - mean)) / len(t_list)
-
-            if flat_outlier > flat_outlier_limitation:
-                start = timeline
+        for t_i, t in enumerate(temperature_list):
+            if np.std(t) > (max_std * 2):
+                start = t_i
                 break
 
         return start
@@ -526,50 +559,65 @@ class MachineLearning:
         mat = db.load(filename)
 
         data = {
-            'ece_data': mat['ece_data'][0, 0]['signal'][0, :],
-            'discharge': mat['ece_data'][0, 0]['discharge'][0, :]
+            'ece_data': mat['ece_data'][0, 0]['signal'],
+            'discharge': mat['ece_data'][0, 0]['discharge']
         }
 
         return data
 
-    def ml_find_outliers(self):
-        import pandas as pd
-        import matplotlib.pyplot as plt
-
-        dataset = pd.read_csv('out.csv').values
-        dataset_test = pd.read_csv('out_test.csv').values
-
+    @staticmethod
+    def ml_find_inv_radius(data_train, data_test):
+        from sklearn.neural_network import MLPClassifier
+        from sklearn.neighbors import KNeighborsClassifier
         from sklearn.svm import SVC
+        from sklearn.gaussian_process import GaussianProcessClassifier
+        from sklearn.gaussian_process.kernels import RBF
+        from sklearn.tree import DecisionTreeClassifier
+        from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
+        from sklearn.naive_bayes import GaussianNB
+        from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
 
-        X_train = (dataset[40:, 1500:1550])
-        y_train = []
-        for i in range(9):
-            y_train.append(0)
-        y_train.append(1)
-
-        plt.plot(dataset_test[:, 1500])
-        plt.show()
-
-        X_test = (dataset_test[:, 1600:1650])
-        # print(len(X_test))
+        data_test = np.array(data_test)[1000:1900, :60]
+        # print(len(data_test))
         # exit()
-        y_test = []
-        for i in range(49):
-            y_test.append(0)
-        y_test.append(1)
 
-        this_C = 1.0
-        clf = SVC(kernel='linear', C=this_C).fit(X_train, y_train)
-        # print('XLF Lag1 dataset')
-        # print('Accuracy of Linear SVC classifier on training set: {:.2f}'
-        #  .format(clf.score(X_train, y_train)))
+        print('data_train len:', len(data_train))
+        # exit()
+
+        # X_test = []
+        # y_test = []
+        # for mixed_train in data_train[1001:1090]:
+        #     X_test.append(mixed_train[:2302])
+        #     y_test.append(mixed_train[-1])
+
+        X_train = data_train[:, :-1]
+        y_train = data_train[:, -1]
+
+        # X_train = []
+        # y_train = []
+        # for i, mixed_train in enumerate(data_train[:500]):
+        #     X_train.append(mixed_train[:1900])
+        #     y_train.append(mixed_train[-1])
+
+        # KNeighborsClassifier(3),
+        # SVC(kernel="linear", C=0.025),
+        # SVC(gamma=2, C=1),
+        # GaussianProcessClassifier(1.0 * RBF(1.0)),
+        # DecisionTreeClassifier(max_depth=5),
+        # RandomForestClassifier(max_depth=5, n_estimators=10, max_features=1),
+        # MLPClassifier(alpha=1),
+        # AdaBoostClassifier(),
+        # GaussianNB(),
+        # QuadraticDiscriminantAnalysis()
+        model = DecisionTreeClassifier().fit(X_train, y_train)
+
+        print('Accuracy of Linear SVC classifier on training set: {:.2f}'
+         .format(model.score(X_train, y_train)))
+
         # print('Accuracy of Linear SVC classifier on test set: {:.2f}'
-        #  .format(clf.score(X_test, y_test)))
+        #  .format(model.score(X_test, y_test)))
 
-        return clf.predict(X_test)
-
-    def ml_find_inv_radius(self):
-        pass
+        return model.predict(data_test)
 
     def ml_find_collapse_duration(self):
         pass
