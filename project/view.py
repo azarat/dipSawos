@@ -21,25 +21,50 @@ class ViewData:
     processing = dt.PreProfiling()
     channel_from = 0
     channel_to = 92
-    window_width_val = 100
-    # window_width_val = 500  # time smoothing
-    window_width_rad_val = 10  # radius smoothing
+    window_width_val_dur = 3  # time smoothing
+    window_width_val_inv = 500  # time smoothing
+    window_width_rad_val = 5  # radius smoothing
     window_func = 'triang'
     boundary = (0.75, 1.5)
     # boundary = (-100, 100)
 
     def __init__(self):
-        print("VERSION: 0.3")
-        # self.build_plots_to_find_inversion_radius()
-        self.build_plots_to_find_collapse_time_duration()
+        print("VERSION: 0.4")
+
+        # Single dis
+        dis_end = 25
+        dis_start = dis_end - 1
+
+        # Range of dis
+        dis_start, dis_end = 0, 64
+
+        close_plots = 1
+
+        """ Inversion radius """
+        # self.build_plots_to_find_inversion_radius(start=dis_start, end=dis_end, median_filter_window_size=(3, 3),
+        #                                           highlight_r_inv=1, start_offset=1, close_plots=close_plots)
+        # # # # # # # # # # # # # # # # # # # # # # # #
+
+        """ Collapse duration """
+        self.build_plots_to_find_collapse_time_duration(start=dis_start, end=dis_end, median_filter_window_size=(11, 11),
+                                                        highlight_r_inv=1, start_offset=1, close_plots=close_plots)
+        # # # # # # # # # # # # # # # # # # # # # # # #
+
+        """ Colormap overview """
+        # self.build_plots_colormap(start=dis_start, end=dis_end, median_filter_window_size=(11, 11),
+        #                           start_offset=4, end_offset=-30, close_plots=close_plots)
+        # # # # # # # # # # # # # # # # # # # # # # # #
+
+        # # # # # # # # # # # # # # # # # # # # # # # #
+        # plt.show()
+        # # # # # # # # # # # # # # # # # # # # # # # #
+
         # self.extra_normalization()
         # self.export_inversion_radius()
         # self.ml_find_inv_radius()
         # self.ml_find_collapse_duration()
-        # self.export_collapse_duration()
 
-    @staticmethod
-    def ml_find_collapse_duration():
+    def ml_find_collapse_duration(self):
         """ -----------------------------------------
             version: 0.3
             desc: export collapse_duration to train neural network
@@ -50,51 +75,65 @@ class ViewData:
 
         """ Extract data from MATLAB database """
         controller = dt.MachineLearning()
-        data = controller.ml_load('machine_learning/train/train_ECE_data_Rinv.mat')
+        data = controller.ml_load('machine_learning/train/train_ECE_data_ColDur.mat')
+        data_train = data['ece_data']
+        data_test = controller.ml_load('machine_learning/ECE_data_tS500_n1_mF5_uDR.mat')
 
-        dis_count = len(data['ece_data'][0, :])  # 31
+        dis_count = len(data['ece_data'])  # 31
         list_dis_all = data['discharge'][0, :]
         # # # # # # # # # # # # # # # # # # # # # # # #
 
-        list_dis = []
-        export_data_dis = []
-        for dis in range(dis_count):
-            print('Discharge: ', dis)
-
-            temperature_list_all = data['ece_data'][0, :][dis]
-            temperature_list = np.transpose(temperature_list_all)[:60]
-
-            """ Find collapse duration """
-            inv_radius_channel = dt.FindInvRadius().inv_radius(temperature_list, 5, 0.01)
-
-            if inv_radius_channel == 0:
+        """ Find collapse duration """
+        data_train_union = list()
+        for dis_i, dis in enumerate(data_train):
+            if dis_i == 25:
                 continue
 
-            # collapse_duration_time = dt.FindCollapseDuration().collapse_duration(temperature_list, 0.2, inv_radius_channel, 0.01)
-            # print(collapse_duration_time)
-            # plt.plot(temperature_list[15])
-            # plt.show()
-            # exit()
+            for ch_i, ch in enumerate(dis):
+                if ch_i > 45 or ch_i < 15:
+                    continue
 
-            list_dis.append(list_dis_all[dis])
-            export_data = []
-            for i, ch in enumerate(temperature_list_all):
-                t_list_export = []
-                for t in ch:
-                    t_list_export.append(t)
-                t_list_export.append(inv_radius_channel)
-                export_data.append(t_list_export)
+                std_cleared = list()
+                for num_i, num in enumerate(ch[0, :]):
+                    if num_i < 1000 or num_i > 1900:
+                        continue
+                    std_cleared.append(num)
+                std_cleared.append(ch[0, -1])
 
-            export_data_dis.append(export_data)
-            print("Inversion radius M1: " + str(inv_radius_channel))
+                std_cleared = np.array(std_cleared)
+                data_train_union.append(std_cleared)
 
-        data_to_save = {
-            'ece_data': {
-                'discharge': list_dis,
-                'signal': np.array(export_data_dis)
-            },
-            'description': 'ECE_data with R_inv indicator at each channel 0/1 based on ECE_data_tS500_n1_mF5_uDR.mat'}
-        io.savemat('machine_learning/train/train_ECE_data_Rinv.mat', data_to_save)
+        data_train_union = np.array(data_train_union)
+        test_dis = 11
+        data_test = np.transpose(data_test['ece_data'][0, :][test_dis])
+
+        collapse_duration_time = np.unique(controller.ml_find_collapse_duration(data_train_union, data_test))
+
+        print(collapse_duration_time)
+
+        """ Find Inversion Radius """
+        """ Method 1 - identify closest channel """
+        # # # # # # # # # # # # # # # # # # # # # # # #
+        inv_radius_channel_index = dt.FindInvRadius().inv_radius(data_test, 5, 0.01)
+        print("Inversion radius M1: " + str(inv_radius_channel_index))
+        # # # # # # # # # # # # # # # # # # # # # # # #
+
+        # # # # # # # # # # # # # # # # # # # # # # # #
+        collapse_duration_time = dt.FindCollapseDuration().collapse_duration(data_test, 6,
+                                                                             inv_radius_channel_index, 1.03)
+        collapse_duration_time = [int(x + (self.window_width_val_inv * 0.7)) for x in collapse_duration_time]
+        print("Time segment: ", collapse_duration_time[0], " ", collapse_duration_time[1])
+        print("Time duration: ", (collapse_duration_time[1] - collapse_duration_time[0]),
+              " ms")
+        # # # # # # # # # # # # # # # # # # # # # # # #
+
+        # # # # # # # # # # # # # # # # # # # # # # # #
+        # self.build_temperature_rmaj_single_plot(
+        #     data_test[:70], self.window_func, self.window_width_val_inv, range(len(data_test[0])),
+        #     time_limits=collapse_duration_time, discharge=test_dis)
+        # # # # # # # # # # # # # # # # # # # # # # # #
+
+        plt.show()
 
         return 1
 
@@ -168,364 +207,375 @@ class ViewData:
 
         return 1
 
-    @staticmethod
-    def export_inversion_radius():
+    def build_plots_colormap(self, start, end, median_filter_window_size, start_offset, end_offset, close_plots):
         """ -----------------------------------------
             version: 0.3
-            desc: export inv radius to train neural network
-                  save to mat files
+            desc: build colormap plots
             :return 1
-
-            7dis without r_inv
         ----------------------------------------- """
 
-        """ Extract data from MATLAB database """
-        controller = dt.MachineLearning()
-        data = controller.ml_load('machine_learning/ECE_data_tS500_n1_mF5_uDR.mat')
+        print('Start detection: inversion radius')
 
-        dis_count = len(data['ece_data'][0, :])  # 32
-        list_dis_all = data['discharge'][0, :]
-        # # # # # # # # # # # # # # # # # # # # # # # #
+        for dis in range(start, end):
 
-        list_dis = []
-        export_data_dis = []
-        for dis in range(dis_count):
-            print('Discharge: ', dis)
+            print("Discharge: " + str(dis + 1))
 
-            temperature_list_all = data['ece_data'][0, :][dis]
-            temperature_list = np.transpose(temperature_list_all)[:60]
-
-            """ Find Inversion Radius """
-            """ Method 1 - identify closest channel """
-            inv_radius_channel = dt.FindInvRadius().inv_radius(temperature_list, 5, 0.01)
-
-            if inv_radius_channel == 0:
-                continue
-
-            list_dis.append(list_dis_all[dis])
-            export_data = []
-            for i, ch in enumerate(temperature_list_all):
-                t_list_export = []
-                for t in ch:
-                    t_list_export.append(t)
-                t_list_export.append(inv_radius_channel)
-                export_data.append(t_list_export)
-
-            export_data_dis.append(export_data)
-            print("Inversion radius M1: " + str(inv_radius_channel))
-
-        data_to_save = {
-            'ece_data': {
-                'discharge': list_dis,
-                'signal': np.array(export_data_dis)
-            },
-            'description': 'ECE_data with R_inv indicator at each channel 0/1 based on ECE_data_tS500_n1_mF5_uDR.mat'}
-        io.savemat('machine_learning/train/train_ECE_data_Rinv.mat', data_to_save)
-
-        return 1
-
-    def extra_normalization(self):
-        """ -----------------------------------------
-            version: 0.3
-            desc:
-            :return 1
-
-            status: IN DEV
-            3 4 12 8 18 21 22
-        ----------------------------------------- """
-
-        temperature_list_dis = []
-        list_dis = []
-        start_time = time.time()
-
-        for dis in range(3, 5):
-            start_time_internal = time.time()
-
-            print("Discharge: " + str(dis))
-
-            if dis == 31 or dis in range(11, 24) or dis in range(47, 64):
+            if dis == 31:
                 continue
 
             """ Extract data from MATLAB database """
-            data = dt.Profiling()
-            data.load(discharge=dis, source='real')
-            # # # # # # # # # # # # # # # # # # # # # # # #
-
-            """ Sort R_maj index and time lists by R_maj value """
-            r_maj = [channel[1] for channel in sorted(data.channels_pos.items(), key=itemgetter(1))][self.channel_from:self.channel_to]
-            channel_order_list = {index: channel[0] for index, channel in enumerate(sorted(data.channels_pos.items(), key=itemgetter(1)))}
-            time_list = data.time_original
-            """ Same vars in a.u. units """
-
-            """ Ordering by R_maj """
-            temperature_list_original = data.order_by_r_maj(data.temperature_original)[self.channel_from:self.channel_to]
-            # # # # # # # # # # # # # # # # # # # # # # # #
-
-            """ Filtering T(t), i.e., smoothing """
-            temperature_list = self.processing.filter(
-                temperature_list_original, self.window_width_val, self.window_func)
-            # temperature_list = temperature_list_original  # skip filtration
-
-            """ Calibrate (Normalization on 1) """
-            temperature_list = data.normalization(temperature_list)
-            # # # # # # # # # # # # # # # # # # # # # # # #
-
-            """ IMPORTANT to remove sawtooth behavior T(r_maj) """
-            # temperature_list = self.processing.filter(
-            #     np.transpose(temperature_list), self.window_width_rad_val, self.window_func)
-            temperature_list = np.transpose(temperature_list)  # skip filtration
-            # # # # # # # # # # # # # # # # # # # # # # # #
-
-            """ Median filtering IMPORTANT to remove outliers T(r_maj) """
-            window_size = 5
-            outliers_list = np.array(temperature_list).tolist()
-            temperature_list_filtered = []
-
-            for t_list in outliers_list:
-                temperature_filtered = []
-                for ii in range(0, len(t_list), window_size):
-                    temperature_filtered += self.processing.median_filtered(np.asanyarray(t_list[ii: ii + window_size]), 3).tolist()
-                temperature_list_filtered.append(temperature_filtered)
-            # temperature_list_filtered = temperature_list  # skip filtration
-            # # # # # # # # # # # # # # # # # # # # # # # #
-
-            # plt.plot(temperature_list_filtered[500], label="500")
-            # plt.plot(temperature_list_filtered[1000], label="1000")
-            # plt.plot(temperature_list_filtered[1500], label="1500")
-            # plt.plot(temperature_list_filtered[2000], label="2000")
-            # plt.legend()
-            # plt.show()
-            temperature_list_dis.append(temperature_list_filtered)
-            list_dis.append(dis)
-
-            print("--- %s seconds ---" % (time.time() - start_time_internal))
-
-        data_to_save = {
-            'ece_data': {
-                'discharge': list_dis,
-                'signal': temperature_list_dis
-            },
-            'description': 'ECE_data_timeSmoothed500_normalized1_medianFiltered5_unsortedDisRemoved'}
-        print(len(temperature_list_dis))
-        # io.savemat('machine_learning/ECE_data_tS500_n1_mF5_uDR.mat', data_to_save)
-        print("------ %s seconds ------" % (time.time() - start_time))
-
-        return 1
-
-    def build_plots_to_find_collapse_time_duration(self):
-        """ -----------------------------------------
-            version: 0.2
-            desc: build plots with collapse duration time-points
-            :return 1
-        ----------------------------------------- """
-
-        for dis in range(1, 64):
-
-            print("Discharge: " + str(dis))
-
-            if dis == 31 or dis == 26 or dis in range(11, 24) or dis in range(47, 64):
-                continue
-
-            """ Extract data from MATLAB database """
+            print('Load data')
             data = dt.Profiling()
             data.load(discharge=dis, source='real')
             # data_public = dt.Profiling(discharge=55, source='public')
             # # # # # # # # # # # # # # # # # # # # # # # #
 
+            """ Remove all channels with R_maj = nan """
+            print('Remove channels with R_maj = nan')
+            r_maj_list = self.processing.dict_to_list(data.channels_pos)
+            temperature_list_original = data.temperature_original
+
+            r_maj_list_buffer = []
+            temperature_list_buffer = []
+            chan_order_buffer = []
+            chan_pos_order_buffer = {}
+            for t_list_i, t_list in enumerate(temperature_list_original.items()):
+
+                if r_maj_list[t_list_i] > 0:
+                    temperature_list_buffer.append(t_list[1])
+                    chan_order_buffer.append(t_list[0])
+                    chan_pos_order_buffer[t_list[0]] = r_maj_list[t_list_i]
+                    r_maj_list_buffer.append(r_maj_list[t_list_i])
+
+            temperature_list_original = temperature_list_buffer
+            # print("--------------------")
+            # print(chan_pos_order_buffer)
+            # print("--------------------")
+            r_maj_list = sorted(r_maj_list_buffer)
+            temperature_list_original = {chan_order_buffer[i]: k for i, k in enumerate(temperature_list_original)}
+            # # # # # # # # # # # # # # # # # # # # # # # #
+
+            print('Sort channels by their own R_maj value')
             """ Sort R_maj index and time lists by R_maj value """
-            r_maj = [channel[1] for channel in sorted(data.channels_pos.items(), key=itemgetter(1))][self.channel_from:self.channel_to]
-            channel_order_list = {index: channel[0] for index, channel in enumerate(sorted(data.channels_pos.items(), key=itemgetter(1)))}
+            r_maj_list_indexes = [channel[0] for channel in sorted(chan_pos_order_buffer.items(), key=itemgetter(1))]
+            r_maj_list = [channel[1] for channel in sorted(chan_pos_order_buffer.items(), key=itemgetter(1))]
+            channel_order_list = {index: channel[0] for index, channel in enumerate(sorted(chan_pos_order_buffer.items(), key=itemgetter(1)))}
             time_list = data.time_original
             """ Same vars in a.u. units """
-
             """ Ordering by R_maj """
-            temperature_list_original = data.order_by_r_maj(data.temperature_original)[self.channel_from:self.channel_to]
-            # # # # # # # # # # # # # # # # # # # # # # # #
-
-            """ Calibrate (Normalization on 1) """
-            temperature_list_clear = data.normalization(temperature_list_original)
-            temperature_list = temperature_list_clear
-            # # # # # # # # # # # # # # # # # # # # # # # #
-
-            """ Median filtering IMPORTANT to remove outliers T(r_maj) """
-            window_size = 5
-            outliers_list = np.array(temperature_list).tolist()
-            temperature_list_filtered = []
-
-            for t_list in np.transpose(outliers_list):
-                temperature_filtered = []
-                for ii in range(0, len(t_list), window_size):
-                    temperature_filtered += self.processing.median_filtered(np.asanyarray(t_list[ii: ii + window_size]), 3).tolist()
-                temperature_list_filtered.append(temperature_filtered)
-            temperature_list = np.transpose(temperature_list_filtered)
-            temperature_list_filtered = temperature_list[:60]
-            # # # # # # # # # # # # # # # # # # # # # # # #
-
-            """
-             Filtering T(t), i.e., smoothing 
-             WARNING: do not smooth due to info losses in 3d 
-             """
-            temperature_list = self.processing.filter(
-                temperature_list, self.window_width_val, self.window_func)
-            # temperature_list = temperature_list_original  # skip filtration
-
-            """ IMPORTANT to remove sawtooth behavior T(r_maj) """
-            temperature_list = self.processing.filter(
-                np.transpose(temperature_list), self.window_width_rad_val, self.window_func)
-            temperature_list = np.transpose(temperature_list)
-            # # # # # # # # # # # # # # # # # # # # # # # #
-
-            """
-            Cut outliers
-            WARNING: Have influence on inv. rad. detection (more cut => less val of outlier need)
-            """
-            # temperature_list = data.outlier_filter_std_deviation(temperature_list, 2, 1)
-            # temperature_list = data.outlier_filter(temperature_list, self.boundary)
-            # # # # # # # # # # # # # # # # # # # # # # # #
-
-            """ Find Inversion Radius """
-            """ Method 1 - identify closest channel """
-            # # # # # # # # # # # # # # # # # # # # # # # #
-            inv_radius_channel_index = dt.FindInvRadius().inv_radius(temperature_list, 5, 0.01)
-            inv_radius_val = r_maj[inv_radius_channel_index] if inv_radius_channel_index > 0 else 0
-            inv_radius_channel = ('{:.4f}'.format(inv_radius_val), inv_radius_channel_index)
-            print("Inversion radius M1: " + str(inv_radius_channel))
-            # # # # # # # # # # # # # # # # # # # # # # # #
-
-            # inv_radius_channel_index = 0
-            # inv_radius_channel = (0, 0)
-
-            # self.build_temperature_rmaj_series_plot(temperature_list, self.window_width_val, r_maj[0:len(temperature_list)], discharge=dis, inv_rad_c=inv_radius_channel, method="M1")
-            # self.build_temperature_rmaj_series_plot(temperature_list, self.window_width_val, r_maj[0:len(temperature_list)], discharge=dis, inv_rad_c=inv_radius_channel)
-
-            # plt.plot(temperature_list[15])
-            # plt.show()
-            # print(len(temperature_list))
-            # exit()
-
-            # # # # # # # # # # # # # # # # # # # # # # # #
-            collapse_duration_time = dt.FindCollapseDuration().collapse_duration(temperature_list, 6, inv_radius_channel_index, 1.03)
-            collapse_duration_time = [int(x+(self.window_width_val * 0.7)) for x in collapse_duration_time]
-            print("Time segment: ", time_list[collapse_duration_time[0]], " ", time_list[collapse_duration_time[1]])
-            print("Time duration: ", (time_list[collapse_duration_time[1]] - time_list[collapse_duration_time[0]]) * 1000, " ms")
-            # # # # # # # # # # # # # # # # # # # # # # # #
-
-            temperature_list = temperature_list[:60]
-            self.build_temperature_rmaj_time_3d_surface(temperature_list_filtered, range(len(temperature_list_filtered)), range(len(temperature_list_filtered[0])), window_width=self.window_width_val, discharge=dis, time_limits=collapse_duration_time)
-            # self.build_temperature_rmaj_time_3d_surface_perspective(temperature_list, range(len(temperature_list)), range(len(temperature_list[0])), discharge=dis)
-
-            # for i in range(0, len(np.transpose(temperature_list)), 100):
-            #     plt.plot(np.transpose(temperature_list)[i])
-            # plt.show()
-            # exit()
-
-            # # # # # # # # # # # # # # # # # # # # # # # #
-            # self.build_temperature_rmaj_single_plot(
-            #     temperature_list[:70], self.window_func, self.window_width_val, range(len(temperature_list[0])),
-            #     time_limits=collapse_duration_time, discharge=dis)
-            # # # # # # # # # # # # # # # # # # # # # # # #
-
-            # plt.close("all")
-            # plt.show()
-            # exit()
-
-        plt.show()
-
-        return 1
-
-    def build_plots_to_find_inversion_radius(self):
-        """ -----------------------------------------
-            version: 0.2
-            desc: build 3d plots, T(r_maj) series and single plots
-            :return 1
-        ----------------------------------------- """
-
-        for dis in range(1, 64):
-
-            print("Discharge: " + str(dis))
-
-            if dis == 31 or dis in range(11, 24) or dis in range(47, 64):
-                continue
-
-            """ Extract data from MATLAB database """
-            data = dt.Profiling()
-            data.load(discharge=dis, source='real')
-            # data_public = dt.Profiling(discharge=55, source='public')
-            # # # # # # # # # # # # # # # # # # # # # # # #
-
-            """ Sort R_maj index and time lists by R_maj value """
-            r_maj = [channel[1] for channel in sorted(data.channels_pos.items(), key=itemgetter(1))][self.channel_from:self.channel_to]
-            channel_order_list = {index: channel[0] for index, channel in enumerate(sorted(data.channels_pos.items(), key=itemgetter(1)))}
-            time_list = data.time_original
-            """ Same vars in a.u. units """
-
-            """ Ordering by R_maj """
-            temperature_list_original = data.order_by_r_maj(data.temperature_original)[self.channel_from:self.channel_to]
-            # public_temperature_ordered_list = data.order_by_r_maj(data_public.temperature_original)[channel_from:channel_to]
+            temperature_list_original = data.order_by_r_maj(temperature_list_original, chan_pos_order_buffer)
             # # # # # # # # # # # # # # # # # # # # # # # #
 
             """
             Filtering T(t), i.e., smoothing 
             WARNING: do not smooth due to info losses in 3d 
             """
-            temperature_list = self.processing.filter(
-                temperature_list_original, self.window_width_val, self.window_func)
-            # temperature_list = temperature_list_original  # skip filtration
+            print('Smoothing channels along timeline - SKIP')
+            # temperature_list_original = self.processing.filter(
+            #     temperature_list_original, self.window_width_val_inv, self.window_func)
+            temperature_list_original = temperature_list_original  # skip filtration
+            # # # # # # # # # # # # # # # # # # # # # # # #
+
 
             """ Calibrate (Normalization on 1) """
-            # temperature_list_original = data.normalization(temperature_list_original)
-            temperature_list = data.normalization(temperature_list)
+            print('Normalizing channels on 1')
+            temperature_list_original = data.normalization(temperature_list_original)
             # # # # # # # # # # # # # # # # # # # # # # # #
 
-            """ IMPORTANT to remove sawtooth behavior T(r_maj) """
-            # temperature_list = self.processing.filter(
-            #     np.transpose(temperature_list), self.window_width_rad_val, self.window_func)
-            # temperature_list = np.transpose(temperature_list)
+            """ Median filtering IMPORTANT to remove outliers T(r_maj) """
+            if median_filter_window_size != 0:
+                median_filter = str(median_filter_window_size[0]) + 'x' + str(median_filter_window_size[1])
+                temperature_list_original = signal_processor.medfilt2d(temperature_list_original, median_filter_window_size)
+            else:
+                median_filter = 0
+                temperature_list_original = data.outlier_filter(temperature_list_original, self.boundary)
+                temperature_list_original = np.array(temperature_list_original)
+
+            print("--------------------")
+
+            print('Plotting results and save as images .PNG')
+            self.build_temperature_rmaj_time_3d_surface(temperature_list_original[start_offset:end_offset, start_offset:-start_offset],
+                                                        r_maj_list[start_offset:end_offset],
+                                                        time_list[start_offset:-start_offset],
+                                                        discharge=dis, median_filter=median_filter)
+
+            print("--------------------")
+            print('\n')
+            if close_plots == 1:
+                plt.close("all")
+
+        return 1
+
+    def build_plots_to_find_collapse_time_duration(self, start, end, median_filter_window_size, highlight_r_inv, start_offset, close_plots):
+        """ -----------------------------------------
+            version: 0.3
+            desc: build plots with collapse duration time-points
+            :return 1
+        ----------------------------------------- """
+
+        print('Start detection: collapse duration')
+
+        for dis in range(start, end):
+
+            print("Discharge: " + str(dis + 1))
+
+            if dis == 31:
+                continue
+
+            """ Extract data from MATLAB database """
+            print('Load data')
+            data = dt.Profiling()
+            data.load(discharge=dis, source='real')
+            # data_public = dt.Profiling(discharge=55, source='public')
+            # # # # # # # # # # # # # # # # # # # # # # # #
+
+            """ Remove all channels with R_maj = nan """
+            print('Remove channels with R_maj = nan')
+            r_maj_list = self.processing.dict_to_list(data.channels_pos)
+            temperature_list_original = data.temperature_original
+
+            r_maj_list_buffer = []
+            temperature_list_buffer = []
+            chan_order_buffer = []
+            chan_pos_order_buffer = {}
+            for t_list_i, t_list in enumerate(temperature_list_original.items()):
+
+                if r_maj_list[t_list_i] > 0:
+                    temperature_list_buffer.append(t_list[1])
+                    chan_order_buffer.append(t_list[0])
+                    chan_pos_order_buffer[t_list[0]] = r_maj_list[t_list_i]
+                    r_maj_list_buffer.append(r_maj_list[t_list_i])
+
+            temperature_list_original = temperature_list_buffer
+            # print("--------------------")
+            # print(chan_pos_order_buffer)
+            # print("--------------------")
+            r_maj_list = sorted(r_maj_list_buffer)
+            temperature_list_original = {chan_order_buffer[i]: k for i, k in enumerate(temperature_list_original)}
+            # # # # # # # # # # # # # # # # # # # # # # # #
+
+            print('Sort channels by their own R_maj value')
+            """ Sort R_maj index and time lists by R_maj value """
+            r_maj_list_indexes = [channel[0] for channel in sorted(chan_pos_order_buffer.items(), key=itemgetter(1))]
+            r_maj_list = [channel[1] for channel in sorted(chan_pos_order_buffer.items(), key=itemgetter(1))]
+            channel_order_list = {index: channel[0] for index, channel in enumerate(sorted(chan_pos_order_buffer.items(), key=itemgetter(1)))}
+            time_list = data.time_original
+            """ Same vars in a.u. units """
+            """ Ordering by R_maj """
+            temperature_list_original = data.order_by_r_maj(temperature_list_original, chan_pos_order_buffer)
             # # # # # # # # # # # # # # # # # # # # # # # #
 
             """
-            Cut outliers
-            WARNING: Have influence on inv. rad. detection (more cut => less val of outlier need)
+            Filtering T(t), i.e., smoothing 
+            WARNING: do not smooth due to info losses in 3d 
             """
-            # temperature_list_original = data.outlier_filter(temperature_list_original, boundary)
-            temperature_list = data.outlier_filter_std_deviation(temperature_list, 2, 1)
-            temperature_list = data.outlier_filter(temperature_list, self.boundary)
+            print('Smoothing channels along timeline')
+            temperature_list_original = self.processing.filter(
+                temperature_list_original, self.window_width_val_dur, self.window_func)
+            # temperature_list_original = temperature_list_original  # skip filtration
             # # # # # # # # # # # # # # # # # # # # # # # #
 
-            """ Find Inversion Radius """
-            """ Method 1 - identify closest channel """
-            inv_radius_channel = dt.FindInvRadius().inv_radius(temperature_list, 5, 0.01)
-            inv_radius_val = r_maj[inv_radius_channel] if inv_radius_channel > 0 else 0
-            inv_radius_channel = ('{:.4f}'.format(inv_radius_val), inv_radius_channel)
-            print("Inversion radius M1: " + str(inv_radius_channel))
-            self.build_temperature_rmaj_series_plot(temperature_list, self.window_width_val, r_maj[0:len(temperature_list)], discharge=dis, inv_rad_c=inv_radius_channel, method="M1")
-            """ Method 2 - identify intersection position """
-            inv_radius_channel = dt.FindInvRadius().inv_radius_intersection(temperature_list, 5, 0.00001, r_maj)
-            print("Inversion radius M2: " + str(inv_radius_channel))
-            self.build_temperature_rmaj_series_plot(temperature_list, self.window_width_val, r_maj[0:len(temperature_list)], discharge=dis, inv_rad_c=inv_radius_channel, method="M2")
 
-            # self.build_temperature_rmaj_time_3d_surface(temperature_list, r_maj[0:len(temperature_list)], time_list[0:len(temperature_list[0])], window_width=self.window_width_val, discharge=dis, inv_rad_c=inv_radius_channel)
-            # self.build_temperature_rmaj_time_3d_surface_perspective(temperature_list, r_maj, time_list, discharge=dis)
+            """ Calibrate (Normalization on 1) """
+            print('Normalizing channels on 1')
+            temperature_list_original = np.array(temperature_list_original)
+            temperature_list_reverse = data.normalization(temperature_list_original[:, ::-1])
+            temperature_list_original = data.normalization(temperature_list_original)
+            # # # # # # # # # # # # # # # # # # # # # # # #
+
+            """ Median filtering IMPORTANT to remove outliers T(r_maj) """
+            if median_filter_window_size != 0:
+                median_filter = str(median_filter_window_size[0]) + 'x' + str(median_filter_window_size[1])
+                temperature_list_original = signal_processor.medfilt2d(temperature_list_original, median_filter_window_size)
+                temperature_list_reverse = signal_processor.medfilt2d(temperature_list_reverse, median_filter_window_size)
+            else:
+                median_filter = 0
+
+            """ 60 - due to the low accuracy after r_inv, which have influence on r_inv detection """
+            print('Inversion radius detection')
+            temperature_list_rad = temperature_list_original[:60]
+            r_maj_list = r_maj_list[:len(temperature_list_rad)]
+            inv_radius_channel = dt.FindInvRadius().inv_radius(temperature_list=temperature_list_rad,
+                                                               window_width=6, std_low_limit=0.01,
+                                                               channel_offset=15)
+
+            """ 
+            Smooth T(r_maj)
+            IMPORTANT to remove sawtooth behavior T(r_maj)
+            """
+            print('Smoothing channels along radius')
+            # temperature_list_original = self.processing.filter(
+            #     np.transpose(temperature_list_original), self.window_width_rad_val, self.window_func)
+            # temperature_list_original = np.transpose(temperature_list_original)
+            # # # # # # # # # # # # # # # # # # # # # # #
+
+            print("--------------------")
+
+            """ Identifying collapse duration """
+            print('Determination of collapse duration')
+            collapse_duration_time = dt.FindCollapseDuration().collapse_duration(temperature_list_reverse, temperature_list_original, 6, inv_radius_channel, 1.03)
+            collapse_duration_time = [int(x) for x in collapse_duration_time]
+            print("Time segment: ", time_list[collapse_duration_time[0]], " ", time_list[collapse_duration_time[1]],
+                  " | ", collapse_duration_time[0], " ", collapse_duration_time[1])
+            print("Time duration: ", (time_list[collapse_duration_time[1]] - time_list[collapse_duration_time[0]]) * 1000, " ms")
+
+            print("--------------------")
+
+            print('Plotting results and save as images .PNG')
+            temperature_list_original = temperature_list_original[35:40, 10:-10]
+            self.build_temperature_rmaj_single_plot(
+                temperature_list_original, self.window_width_val_dur, time_list[10:len(temperature_list_original[0])+10],
+                highlight_r_inv, start_offset, median_filter,
+                time_limits=collapse_duration_time, discharge=dis)
+            # temperature_list_original = temperature_list_original[0:55]
             # self.build_temperature_rmaj_single_plot(
-            #     temperature=temperature_list,
-            #     temperature_original=temperature_list_original,
-            #     channels_pos=r_maj,
-            #     window_width=window_width_val,
-            #     channel_to_compare=3,
-            #     time_list=time_list,
-            #     channel_order_list=channel_order_list,
-            #     window_name=window_func)
+            #     temperature_list_original, self.window_width_val_dur, range(len(temperature_list_original[0])),
+            #     highlight_r_inv, start_offset, median_filter,
+            #     time_limits=collapse_duration_time, discharge=dis)
+            # # # # # # # # # # # # # # # # # # # # # # # #
 
-            plt.close("all")
+            print("--------------------")
+            print('\n')
+            if close_plots == 1:
+                plt.close("all")
 
-        # plt.show()
+        return 1
+
+    def build_plots_to_find_inversion_radius(self, start, end, median_filter_window_size, highlight_r_inv, start_offset, close_plots):
+        """ -----------------------------------------
+            version: 0.3
+            desc: build 3d plots, T(r_maj) series, calculate inversion radius
+            :return 1
+        ----------------------------------------- """
+
+        print('Start detection: inversion radius')
+
+        for dis in range(start, end):
+
+            print("Discharge: " + str(dis + 1))
+
+            if dis == 31:
+                continue
+
+            """ Extract data from MATLAB database """
+            print('Load data')
+            data = dt.Profiling()
+            data.load(discharge=dis, source='real')
+            # data_public = dt.Profiling(discharge=55, source='public')
+            # # # # # # # # # # # # # # # # # # # # # # # #
+
+            """ Remove all channels with R_maj = nan """
+            print('Remove channels with R_maj = nan')
+            r_maj_list = self.processing.dict_to_list(data.channels_pos)
+            temperature_list_original = data.temperature_original
+
+            r_maj_list_buffer = []
+            temperature_list_buffer = []
+            chan_order_buffer = []
+            chan_pos_order_buffer = {}
+            for t_list_i, t_list in enumerate(temperature_list_original.items()):
+
+                if r_maj_list[t_list_i] > 0:
+                    temperature_list_buffer.append(t_list[1])
+                    chan_order_buffer.append(t_list[0])
+                    chan_pos_order_buffer[t_list[0]] = r_maj_list[t_list_i]
+                    r_maj_list_buffer.append(r_maj_list[t_list_i])
+
+            temperature_list_original = temperature_list_buffer
+            # print("--------------------")
+            # print(chan_pos_order_buffer)
+            # print("--------------------")
+            r_maj_list = sorted(r_maj_list_buffer)
+            temperature_list_original = {chan_order_buffer[i]: k for i, k in enumerate(temperature_list_original)}
+            # # # # # # # # # # # # # # # # # # # # # # # #
+
+            print('Sort channels by their own R_maj value')
+            """ Sort R_maj index and time lists by R_maj value """
+            r_maj_list_indexes = [channel[0] for channel in sorted(chan_pos_order_buffer.items(), key=itemgetter(1))]
+            r_maj_list = [channel[1] for channel in sorted(chan_pos_order_buffer.items(), key=itemgetter(1))]
+            channel_order_list = {index: channel[0] for index, channel in enumerate(sorted(chan_pos_order_buffer.items(), key=itemgetter(1)))}
+            time_list = data.time_original
+            """ Same vars in a.u. units """
+            """ Ordering by R_maj """
+            temperature_list_original = data.order_by_r_maj(temperature_list_original, chan_pos_order_buffer)
+            # # # # # # # # # # # # # # # # # # # # # # # #
+
+            """
+            Filtering T(t), i.e., smoothing 
+            WARNING: do not smooth due to info losses in 3d 
+            """
+            print('Smoothing channels along timeline')
+            temperature_list_original = self.processing.filter(
+                temperature_list_original, self.window_width_val_inv, self.window_func)
+            # temperature_list_original = temperature_list_original  # skip filtration
+            # # # # # # # # # # # # # # # # # # # # # # # #
+
+
+            """ Calibrate (Normalization on 1) """
+            print('Normalizing channels on 1')
+            temperature_list_original = data.normalization(temperature_list_original)
+            # # # # # # # # # # # # # # # # # # # # # # # #
+
+            """ Median filtering IMPORTANT to remove outliers T(r_maj) """
+            if median_filter_window_size != 0:
+                median_filter = str(median_filter_window_size[0]) + 'x' + str(median_filter_window_size[1])
+                temperature_list_original = signal_processor.medfilt2d(temperature_list_original, median_filter_window_size)
+            else:
+                median_filter = 0
+
+            """ 60 - due to the low accuracy after r_inv, which have influence on r_inv detection """
+            print('Inversion radius detection')
+            temperature_list_original = temperature_list_original[:60]
+            r_maj_list = r_maj_list[:len(temperature_list_original)]
+            inv_radius_channel = dt.FindInvRadius().inv_radius(temperature_list=temperature_list_original,
+                                                               window_width=6, std_low_limit=0.01,
+                                                               channel_offset=15)
+
+            print("--------------------")
+            if inv_radius_channel == 0:
+                inv_radius = {
+                    'index': 0,
+                    'channel': 0,
+                    'value': '{:.4f}'.format(0),
+                    'value_neighbors': (0, 0)
+                }
+                print("Detection FAILED")
+            else:
+                inv_radius = {
+                    'index': inv_radius_channel,
+                    'channel': r_maj_list_indexes[inv_radius_channel],
+                    'value': '{:.4f}'.format(r_maj_list[inv_radius_channel]),
+                    'value_neighbors': (r_maj_list[inv_radius_channel - 1], r_maj_list[inv_radius_channel + 1])
+                }
+
+                print("Inversion radius index M1: " + str(inv_radius['index']))
+                print("Inversion radius channel M1: " + str(inv_radius['channel']))
+                print("Inversion radius value M1: " + str(inv_radius['value']))
+
+            print("--------------------")
+
+            print('Plotting results and save as images .PNG')
+            # # # # # # # # # # # # # # # # # # # # # # # #
+            # self.build_temperature_rmaj_time_3d_surface(temperature_list_original, r_maj_list,
+            #                                             time_list, discharge=dis, r_inv=inv_radius_channel)
+            # # # # # # # # # # # # # # # # # # # # # # # #
+            self.build_temperature_rmaj_series_plot(temperature_list_original[start_offset:], self.window_width_val_inv,
+                                                    r_maj_list[start_offset:], highlight_r_inv, discharge=dis, r_inv=inv_radius,
+                                                    method="median" + str(median_filter) +
+                                                           "_highlight" + str(highlight_r_inv) + "_M1")
+            # # # # # # # # # # # # # # # # # # # # # # # #
+
+            print("--------------------")
+            print('\n')
+            if close_plots == 1:
+                plt.close("all")
 
         return 1
 
     @staticmethod
     def build_temperature_rmaj_time_3d_surface(temperature_list, r_maj, time_list, **kwargs):
         """ -----------------------------------------
-            version: 0.2
+            version: 0.3
             desc: build plot of top view of temperature distribution
             :param temperature_list: 2d list of num
             :param r_maj: 1d list of num
@@ -533,44 +583,35 @@ class ViewData:
             :return 1
         ----------------------------------------- """
         fig, ax = plt.subplots(1, 1)
-        # fig = plt.figure()
         fig.set_size_inches(15, 7)
 
         # Make data.
         x = time_list[0:len(temperature_list[0])]
-        # x = range(0,len(temperature_list[0]))
         y = r_maj
         x, y = np.meshgrid(x, y)
         z = np.array(temperature_list)
 
         # COLORMAP HERE "CMRmap", "inferno", "plasma"
-        cs = plt.contourf(x, y, z, 50, corner_mask=True, cmap=cm.CMRmap)
-        plt.title('Temperature evolution' +
-                  ', discharge ' + str(kwargs['discharge']), fontsize=17)
-        plt.xlabel('Time', fontsize=17)
-        plt.ylabel('R_maj', fontsize=17)
+        cs = plt.contourf(x, y, z, 100, corner_mask=True, cmap=cm.CMRmap)
+        plt.title('Colormap of normalized ECE signals' +
+                  ', crash ' + str(kwargs['discharge'] + 1), fontsize=17)
+        plt.xlabel('Time (seconds)', fontsize=17)
+        plt.ylabel('R maj (m)', fontsize=17)
         # END
-
-        max_temp = max(r_maj)
-        min_temp = 0
-
-        rect = patches.Rectangle((time_list[kwargs['time_limits'][0]], min_temp),
-                                 (time_list[kwargs['time_limits'][1]] - time_list[kwargs['time_limits'][0]]),
-                                 max_temp - min_temp, linewidth=0, edgecolor='r', facecolor='g', alpha=0.3)
-
-        ax.add_patch(rect)
-
 
         # Add a color bar which maps values to colors.
         cbs = fig.colorbar(cs)
-        cbs.ax.set_ylabel('Temperature (eV)', fontsize=17)
+        cbs.ax.set_ylabel('Temperature (a.u.)', fontsize=17)
 
-        directory = 'results/extra_normalization/3d_au_0_80/'
+        directory = 'results/v05/dis' + str(kwargs['discharge'] + 1) + '/'
 
-        # if not os.path.exists(directory):
-        #     os.makedirs(directory)
-        #
-        # fig.savefig(directory + 'tokamat_colormap_dis' + str(kwargs['discharge']) + '_w' + str(kwargs['window_width']) + '.png')
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+
+        fig.savefig(directory + 'dis' + str(kwargs['discharge'] + 1) +
+                    '_colormap' +
+                    '_total' + str(len(temperature_list)) +
+                    '.png')
 
         return 1
 
@@ -620,9 +661,10 @@ class ViewData:
         return 1
 
     @staticmethod
-    def build_temperature_rmaj_single_plot( temperature, window_name, window_width, time_list, **kwargs):
+    def build_temperature_rmaj_single_plot(temperature, window_width, time_list, highlight_r_inv,
+                                           start_offset, median_filter, **kwargs):
         """ -----------------------------------------
-            version: 0.2
+            version: 0.3
             :param temperature: 2d array of filtered and calibrated temperature (list of nums)
             :param temperature_original: 2d of original ordered temperature (list of nums)
             :param window_name: str value of window of recently wind. filtration
@@ -641,60 +683,35 @@ class ViewData:
         fig, axes = plt.subplots()
         fig.set_size_inches(15, 7)
 
-        # axes.plot(
-        #     # range(0, len(temperature_original[channel_to_compare])),
-        #     time_list[0:len(temperature_original[channel_to_compare])],
-        #     temperature_original[channel_to_compare],
-        #     alpha=0.5,
-        #     color='c'
-        # )
-
         """ Time limits of collapse """
-        mix_temp_list = []
-        for t_list in temperature:
-            for t in t_list:
-                mix_temp_list.append(t)
-
-        # axes.plot(
-        #     [time_list[kwargs['time_limits'][0]], time_list[kwargs['time_limits'][0]]],
-        #     [min_temp, max_temp],
-        #     color='r'
-        # )
-        #
-        # axes.plot(
-        #     [time_list[kwargs['time_limits'][1]], time_list[kwargs['time_limits'][1]]],
-        #     [min_temp, max_temp],
-        #     color='r'
-        # )
-
-        max_temp = max(mix_temp_list)
-        min_temp = min(mix_temp_list)
-
-        if kwargs['time_limits'] != 0:
-            rect = patches.Rectangle((time_list[kwargs['time_limits'][0]], min_temp),
-                                     (time_list[kwargs['time_limits'][1]] - time_list[kwargs['time_limits'][0]]),
-                                     max_temp - min_temp, linewidth=0, edgecolor='r', facecolor='r', alpha=0.2)
-
-            axes.add_patch(rect)
-        # # # # # # # # # # # # # # # # # # # # # #
-
-        for channel in range(0, 65, 5):
+        temperature_list_buffer = []
+        for channel in range(0, len(temperature), 5):
+            temperature_list_buffer.append(temperature[channel])
             axes.plot(
-                # range(0, len(temperature[channel_to_compare])),
-                time_list[0:len(temperature[channel])],
-                temperature[channel],
+                time_list[start_offset:-start_offset],
+                temperature[channel, start_offset:-start_offset],
                 color='b'
             )
 
-        collapse_duration_txt = '{:.4f}'.format((time_list[kwargs['time_limits'][1]] -
-                                                 time_list[kwargs['time_limits'][0]]) * 1000) if kwargs['time_limits'] != 0 else 0
+        max_temp = max(map(max, temperature_list_buffer))
+        min_temp = min(map(min, temperature_list_buffer))
 
-        axes.set(xlabel='Time (seconds)', ylabel='T (eV)',
-                 title='Signal, "'
-                       + window_name + '" wind. func., '
-                       + ' ' + str(kwargs['discharge']) + ' discharge, ' +
-                       'wind. width ' + str(window_width) +
-                        ', Collapse duration = ' + str(collapse_duration_txt) + "ms")
+        collapse_duration_txt = 0
+        if kwargs['time_limits'] != 0 and kwargs['time_limits'][0] > 0 and kwargs['time_limits'][1] < len(time_list):
+            if highlight_r_inv == 1:
+                rect = patches.Rectangle((time_list[kwargs['time_limits'][0]], min_temp),
+                                         (time_list[kwargs['time_limits'][1]] - time_list[kwargs['time_limits'][0]]),
+                                         max_temp - min_temp, linewidth=0, edgecolor='r', facecolor='r', alpha=0.2)
+
+                axes.add_patch(rect)
+
+            collapse_duration_txt = '{:.4f}'.format((time_list[kwargs['time_limits'][1]] -
+                                                     time_list[kwargs['time_limits'][0]]) * 1000) if kwargs['time_limits'] != 0 else 0
+
+        axes.set(xlabel='Time (seconds)', ylabel='T (a.u.)',
+                 title='Channels series, '
+                       + 'wind. width ' + str(window_width) +
+                        '\nCollapse duration = ' + str(collapse_duration_txt) + "ms")
 
 
         for item in ([axes.title, axes.xaxis.label, axes.yaxis.label] +
@@ -703,20 +720,22 @@ class ViewData:
 
         axes.grid()
 
-        directory = 'results/extra_normalization/T_time_series/'
+        directory = 'results/v05/dis' + str(kwargs['discharge'] + 1) + '/'
 
         if not os.path.exists(directory):
             os.makedirs(directory)
 
-        fig.savefig(directory + 'dis' + str(kwargs['discharge']) +
-                    '_T_time_series_w' + str(window_width) + '.png')
+        fig.savefig(directory + 'dis' + str(kwargs['discharge'] + 1) +
+                    '_T_time_series_w' + str(window_width) +
+                    '_median' + str(median_filter) + '_highlight' + str(highlight_r_inv) +
+                    '.png')
 
         return 1
 
     @staticmethod
-    def build_temperature_rmaj_series_plot(temperature_list, window_width, r_maj, **kwargs):
+    def build_temperature_rmaj_series_plot(temperature_list, window_width, r_maj, highlight_r_inv, **kwargs):
         """ -----------------------------------------
-            version: 0.2
+            version: 0.3
             :param temperature_list: 2d list of num
             :param window_width: num val from wind filtering
             :param r_maj: 1d list of num
@@ -726,10 +745,19 @@ class ViewData:
         with various fixed time
         """
 
-        fig, axes = plt.subplots()
+        # fig, axes = plt.subplots()
+        fig = plt.figure()
+        axes = fig.add_subplot(111)
         fig.set_size_inches(15, 7)
 
         # # # # # # # # # # # # # # # # # # # # # # # #
+        """ Fix determining minmax """
+        plot_limit = len(temperature_list[0])
+        temperature_list_buffer = []
+        for time, temperature in enumerate(np.transpose(temperature_list)):
+            if time in range(0, plot_limit, 100):
+                temperature_list_buffer.append(temperature)
+
         label_limit = len(temperature_list)
         for time, temperature in enumerate(np.transpose(temperature_list)):
             """ 
@@ -744,23 +772,33 @@ class ViewData:
                 axes.grid(which='major', alpha=0.5)
 
                 """ Create labels for every point on plot """
-                labels = range(label_limit)
+                # labels = range(label_limit)
+                #
+                # # order_ticks = []
+                # for label, x, y in zip(labels, r_maj, temperature):
+                #
+                #     pos_offset = (0, 20)
+                #     if label in range(0, label_limit):
+                #         # order_ticks.append(x)
+                #         plt.annotate(
+                #             label,
+                #             xy=(x, y), xytext=pos_offset,
+                #             textcoords='offset points', ha='center', va='center',
+                #             arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=0.5'))
+                #
+                # # ax2 = axes.twiny()
+                # # ax2.set_xlim(axes.get_xlim())
+                # # ax2.set_xticks(order_ticks)
+                # # ax2.set_xticklabels(order_ticks)
 
-                for label, x, y in zip(labels, r_maj, temperature):
-                    if label < 50:
-                        pos_offset = (0, 20)
-                    else:
-                        pos_offset = (0, -20)
-
-                    if label in range(0, label_limit, 2):
-                        plt.annotate(
-                            label,
-                            xy=(x, y), xytext=pos_offset,
-                            textcoords='offset points', ha='center', va='center',
-                            arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=0.5'))
+                if highlight_r_inv == 1 and kwargs['r_inv']['index'] != 0:
+                    rect = patches.Rectangle((kwargs['r_inv']['value_neighbors'][0], min(map(min, temperature_list_buffer))),
+                                             (kwargs['r_inv']['value_neighbors'][1] - kwargs['r_inv']['value_neighbors'][0]),
+                                             max(map(max, temperature_list_buffer)) - min(map(min, temperature_list_buffer)),
+                                             linewidth=3, edgecolor='r', facecolor='r', alpha=0.2)
+                    axes.add_patch(rect)
 
             """ Plot all temperature sets T(r_maj) """
-            plot_limit = len(temperature_list[0])
             if time in range(0, plot_limit, 100):
                 axes.plot(
                     r_maj,
@@ -769,11 +807,12 @@ class ViewData:
 
         # # # # # # # # # # # # # # # # # # # # # # # #
 
-        axes.set(ylabel='T (eV)', xlabel='R maj (m)',
-                 title='T(r_maj) series '
-                       'in various time instants, '
-                       'win. width ' + str(window_width) +
-                       ', inv. rad. ' + str(kwargs['inv_rad_c']))
+        # axes.set_xlim(min(r_maj), max(r_maj))
+        axes.set(ylabel='T (a.u.)', xlabel='R maj (m)',
+                 title='T(R_maj) series '
+                       'in various time instants\n'
+                       'R_inv: channel = ' + str(kwargs['r_inv']['channel']) +
+                       ', value = ' + str(kwargs['r_inv']['value']) + 'm')
 
         for item in ([axes.title, axes.xaxis.label, axes.yaxis.label] +
                      axes.get_xticklabels() + axes.get_yticklabels()):
@@ -781,12 +820,14 @@ class ViewData:
 
         method = ("_" + str(kwargs['method'])) if 'method' in kwargs else ''
 
-        directory = 'results/ml/T_Rmaj_series' + str(method) + '/'
+        directory = 'results/v05/dis' + str(kwargs['discharge'] + 1) + '/'
 
         if not os.path.exists(directory):
             os.makedirs(directory)
 
-        fig.savefig(directory + 'dis' + str(kwargs['discharge']) +
-                    '_T_Rmaj_series_w' + str(window_width) + '.png')
+        fig.savefig(directory + 'dis' + str(kwargs['discharge'] + 1) +
+                    '_T_Rmaj_series_w' + str(window_width) +
+                    str(method) +
+                    '.png')
 
         return 1

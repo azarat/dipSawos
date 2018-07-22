@@ -55,7 +55,7 @@ class Controller:
 
 class Profiling(Controller):
 
-    def order_by_r_maj(self, temperature_list_to_order):
+    def order_by_r_maj(self, temperature_list_to_order, chan_pos_order_buffer):
         """ -----------------------------------------
             version: 0.2
             desc: ordering temperature list by r_maj position
@@ -64,8 +64,9 @@ class Profiling(Controller):
         ----------------------------------------- """
         temperature_ordered_list = []
 
-        for channel in sorted(self.channels_pos.items(), key=itemgetter(1)):
-            if channel[0] in range(1, len(temperature_list_to_order)):
+        for channel in sorted(chan_pos_order_buffer.items(), key=itemgetter(1)):
+            # if channel[0] in range(1, len(temperature_list_to_order)):
+            if channel[0] in temperature_list_to_order:
                 temperature_ordered_list.append(
                     temperature_list_to_order[channel[0]]
                 )
@@ -85,7 +86,7 @@ class Profiling(Controller):
         output = []
 
         for num_list in temperature:
-            normalized = num_list / (sum(num_list[0:9]) / 10)
+            normalized = num_list / (sum(num_list[0:10]) / 10)
             output.append(normalized)
 
         return output
@@ -194,19 +195,19 @@ class PreProfiling:
 
 class FindCollapseDuration:
 
-    def collapse_duration(self, temperature_list, flat_outlier_limitation, inv_radius_channel, dynamic_outlier_limitation):
+    def collapse_duration(self, temperature_list_reverse, temperature_list, std_low_limit, inv_radius_channel, dynamic_outlier_limitation):
 
         """ -----------------------------------------
-            version: 0.2
+            version: 0.3
             desc: search time points of Collapse duration
             :param temperature_list: 2d list of num
             :param time_list: 1d list of num
-            :param flat_outlier_limitation: float val of min deviation which indicate start index
+            :param std_low_limit: float val of min deviation which indicate start index
             :return list with int val of indexes in time_list
         ----------------------------------------- """
 
         collapse_start_time = self.collapse_start(temperature_list, inv_radius_channel)
-        collapse_end_time = self.collapse_end(temperature_list, inv_radius_channel, collapse_start_time)
+        collapse_end_time = self.collapse_end(temperature_list_reverse, inv_radius_channel, collapse_start_time)
 
         return (collapse_start_time, collapse_end_time)
 
@@ -214,7 +215,7 @@ class FindCollapseDuration:
     def collapse_end(temperature_list, inv_radius_channel, start):
 
         """ -----------------------------------------
-            version: 0.3
+            version: 0.4
             desc: search time point at which end Precursor + Fast Phase
             :param temperature_list: 2d list of num
             :return int val of index in time_list
@@ -223,59 +224,197 @@ class FindCollapseDuration:
         if inv_radius_channel == 0:
             inv_radius_channel = 60
 
-        start = 700
+        temperature_list = np.transpose(temperature_list[:inv_radius_channel])
+        temperature_list = temperature_list[10:-10]
 
-        temperature_list = np.transpose(temperature_list[:inv_radius_channel])[::-1]
+        # ########################################## V06 INTERESTING
+        # end = 0
+        # corelator = []
+        # for t_list_i, t_list in enumerate(temperature_list):
+        #     if t_list_i == 0:
+        #         continue
+        #     coef = t_list / temperature_list[t_list_i - 1]
+        #     coef = np.mean(coef)  # mean or std
+        #     corelator.append(coef)
+        # corelator = np.array(corelator)
+        # corelator = np.abs(corelator - 1)  # skip if std instead mean
+        # corelator = signal_processor.medfilt(corelator, 13)[51:]
+        # std = corelator
+        # max_std = max(corelator[:700]) + np.std(corelator[:700]) * 10
+        #
+        # if max(corelator[:700]) / max(corelator) > 0.5:
+        #     max_std = max(corelator[:700]) + np.std(corelator[:700]) * 1
+        # elif max(corelator[:700]) / max(corelator) > 0.3:
+        #     max_std = max(corelator[:700]) + np.std(corelator[:700]) * 2
+        #
+        # for t_i, t in enumerate(corelator):
+        #     if t > max_std and end == 0:
+        #             end = t_i - 10
+        #
+        # # print(max(corelator[:700]) / max(corelator))
+        # # exit()
+        # ##########################################
+        # import matplotlib.pyplot as plt
+        # fig, ax = plt.subplots()
+        # fig.set_size_inches(15, 7)
+        # max_std = [max_std for x in corelator]
+        # ax.plot(max_std)
+        # ax.plot(corelator)
+        # # for t in range(0, 1900, 100):
+        # #     ax.plot(temperature_list[t])
+        #
+        # ax.set(xlabel='Inv. Time', ylabel='Coefficient',
+        #        title='Correlation coefficient')
+        #
+        # for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
+        #              ax.get_xticklabels() + ax.get_yticklabels()):
+        #     item.set_fontsize(17)
+        # # plt.show()
+        # # exit()
 
-        std = []
-        for t in range(len(temperature_list)):
-            std.append(np.std(temperature_list[t]))
-
-        colerator = []
-        cor_prev = 0
+        ########################################## V05 INTERESTING
         end = 0
-        end_up = 0
-        end_down = 10000000
-        indicator_up = 0
-        indicator_down = 0
-        for val_i, val in enumerate(std):
-            if val_i == 0:
-                cor_prev = val
-            else:
-                cor = cor_prev / val
-                colerator.append(cor)
+        corelator = []
+        for t_list_i, t_list in enumerate(temperature_list):
+            if t_list_i < 10:
+                continue
+            coef = t_list / temperature_list[t_list_i - 10]
+            coef = np.std(coef)
+            corelator.append(coef)
+        corelator = signal_processor.medfilt(corelator, 5)[6:]
+        std = corelator
 
-                if val_i == start:
-                    indicator_up = (max(colerator) + (np.std(colerator) * 5))
-                    indicator_down = (min(colerator) - (np.std(colerator) * 3))
+        if max(corelator[:700]) / max(corelator) > 0.4:
+            max_std = max(corelator[:700]) + np.std(corelator[:700]) * 5
+        else:
+            max_std = (max(corelator) - min(corelator[:700])) / 2
 
-                if cor > indicator_up > 0:
-                    if end_up == 0:
-                        end_up = val_i
-                        # print(end_up)
+        for t_i, t in enumerate(corelator):
+            if t > max_std and end == 0:
+                    end = t_i - 10
 
-                if cor < indicator_down > 0:
-                    if end_down == 10000000:
-                        end_down = val_i
-                        # print(end_down)
+        ##########################################
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots()
+        fig.set_size_inches(15, 7)
+        max_std = [max_std for x in corelator]
+        ax.plot(max_std)
+        ax.plot(corelator[::-1])
 
-                if end_down < end_up:
-                    end = end_down
-                else:
-                    end = end_up
+        ax.set(xlabel='Inv. Time', ylabel='Coefficient',
+               title='Correlation coefficient')
 
-                cor_prev = val
+        for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
+                     ax.get_xticklabels() + ax.get_yticklabels()):
+            item.set_fontsize(17)
+        # plt.show()
+        # exit()
 
-        # print(end)
+        ########################################## V04
+        # end = 0
+        # std = []
+        # for t_i, t in enumerate(temperature_list):
+        #     std.append(np.std(t))
+        #
+        # """
+        # We know that from 0 to 700th point figure is flat
+        # (first ~10 can be outliers due to median filtration)
+        # """
+        # std = signal_processor.medfilt(std, 51)[51:]
+        # max_std = max(std[:700]) + np.std(std[:700]) * 10
+        #
+        # for t_i, t in enumerate(std):
+        #     if t > max_std and std[t_i - 10] > max_std and end == 0:
+        #         end = t_i - 20
+        #
+        # ##########################################
+        # import matplotlib.pyplot as plt
+        # fig, ax = plt.subplots()
+        # fig.set_size_inches(15, 7)
+        # max_std = [max_std for x in std]
+        # ax.plot(max_std)
+        # ax.plot(std)
+        #
+        # ax.set(xlabel='Inv. Time', ylabel='Coefficient',
+        #        title='Correlation coefficient')
+        #
+        # for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
+        #              ax.get_xticklabels() + ax.get_yticklabels()):
+        #     item.set_fontsize(17)
+        # plt.show()
+        # exit()
+        #
+        ########################################## V03
+        #
+        # std = []
+        # for t in range(len(temperature_list)):
+        #     std.append(np.std(temperature_list[t]))
+        # std = signal_processor.medfilt(std, 51)[51:-51]
+        #
+        # # std = std[::-1]
+        # std_norm = sum(std[:200]) / 200
+        # std = std / std_norm
+        #
+        # level = (np.std(std[:500]) * 4) + max(std[:500])
+        #
+        # """ MUST TO DO. CHANGE LOGIC"""
+        # end = 0
+        # for l_i, l in enumerate(std):
+        #     if l > level:
+        #         end = l_i - 51
+        #         break
+
         end = len(std) - end
+
+        # colerator = []
+        # cor_prev = 0
+        # end = 0
+        # end_up = 0
+        # end_down = 10000000
+        # indicator_up = 1.01
+        # indicator_down = 0.99
+        # for val_i, val in enumerate(std):
+        #     if val_i == 0:
+        #         cor_prev = val
+        #     else:
+        #         cor = cor_prev / val
+        #         colerator.append(cor)
+        #
+        #         cor_prev = val
+        #
+        # colerator = signal_processor.medfilt(colerator, 11)[11:-11]
+        # for c_i, c in enumerate(colerator):
+        #     if c > indicator_up > 0 and colerator[c_i - 1] > indicator_up > 0:
+        #         if end_up == 0:
+        #             end_up = c_i + 10
+        #
+        #     if c < indicator_down > 0 and colerator[c_i - 1] < indicator_down > 0:
+        #         if end_down == 10000000:
+        #             end_down = c_i + 10
+        #
+        #     if end_down < end_up:
+        #         end = end_down
+        #     else:
+        #         end = end_up
+        #
+        # end = len(std) - end
 
         # inds_up = [indicator_up for x in colerator]
         # inds_down = [indicator_down for x in colerator]
         # import matplotlib.pyplot as plt
-        # fig, ax = plt.subplots(1, 1)
+        # fig, ax = plt.subplots()
+        # fig.set_size_inches(15, 7)
         # ax.plot(inds_up)
         # ax.plot(inds_down)
         # ax.plot(colerator)
+        #
+        # ax.set(xlabel='Inv. Time', ylabel='Coefficient',
+        #        title='Correlation coefficient')
+        #
+        # for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
+        #              ax.get_xticklabels() + ax.get_yticklabels()):
+        #     item.set_fontsize(17)
+        #
         # plt.show()
         # exit()
 
@@ -288,22 +427,73 @@ class FindCollapseDuration:
             version: 0.3
             desc: search time point at which start Precursor Phase
             :param temperature_list: 2d list of num
-            :param flat_outlier_limitation: float val of min deviation which indicate start index
+            :param std_low_limit: float val of min deviation which indicate start index
             :return int val of index in time_list
         ----------------------------------------- """
 
-        temperature_list = np.transpose(temperature_list[:60])
+        if r_inv_index == 0:
+            r_inv_index = 60
 
-        std = []
-        for t in range(700):
-            std.append(np.std(temperature_list[t]))
-        max_std = max(std)
+        temperature_list = np.transpose(temperature_list[:r_inv_index])
+        temperature_list = temperature_list[10:-10]
+
+
+        # start = 0
+        # std = []
+        # for t_i, t in enumerate(temperature_list):
+        #     std.append(np.std(t))
+
+        """ 
+        We know that from 0 to 700th point figure is flat
+        (first ~10 can be outliers due to median filtration)
+        """
+        # std = signal_processor.medfilt(std, 51)
+        # max_std = max(std[10:700]) + np.std(std[10:700]) * 15
+        # # max_std = (max_std + max(std) / 4) / 2
+        #
+        # for t_i, t in enumerate(std):
+        #     if t > max_std and std[t_i - 10] > max_std and start == 0:
+        #         start = t_i - 20
 
         start = 0
-        for t_i, t in enumerate(temperature_list):
-            if np.std(t) > (max_std * 2):
-                start = t_i
-                break
+        corelator = []
+        for t_list_i, t_list in enumerate(temperature_list):
+            if t_list_i < 10:
+                continue
+            coef = t_list / temperature_list[t_list_i - 10]
+            coef = np.std(coef)
+            corelator.append(coef)
+        corelator = corelator / (sum(corelator[:700]) / 700)
+        corelator = signal_processor.medfilt(corelator, 5)[6:]
+        std = corelator
+
+        if max(corelator[:700]) / max(corelator) > 0.4:
+            max_std = max(corelator[:700]) + np.std(corelator[:700]) * 5
+        else:
+            max_std = (max(corelator) - min(corelator[:700])) / 2
+
+        for t_i, t in enumerate(corelator):
+            if t > max_std and start == 0:
+                start = t_i - 10
+
+        ###############################################
+        # import matplotlib.pyplot as plt
+        # inds_up = [max_std for x in std]
+        # fig, ax = plt.subplots()
+        # fig.set_size_inches(15, 7)
+        # ax.plot(inds_up)
+        # ax.plot(corelator)
+        #
+        # ax.set(xlabel='Inv. Time', ylabel='Coefficient',
+        #        title='Correlation coefficient')
+        #
+        # for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
+        #              ax.get_xticklabels() + ax.get_yticklabels()):
+        #     item.set_fontsize(17)
+        #
+        # # plt.show()
+        # # exit()
+        ###############################################
 
         return start
 
@@ -347,13 +537,13 @@ class FindInvRadius:
 
         return indicator
 
-    def inv_radius(self, temperature_list, window_width, flat_outlier_limitation):
+    def inv_radius(self, temperature_list, window_width, std_low_limit, channel_offset):
 
         """ -----------------------------------------
             version: 0.2
             desc: define if list of nums increase or decrease
             :param temperature_list: 2d array of nums normalised on 1
-            :param flat_outlier_limitation: float val to skip flat regions
+            :param std_low_limit: float val to skip flat regions
             :param window_width: int val of len by which make plane indicating
             :return main_candidate_index: value of the most probable index
                     of channel with inversion radius
@@ -366,13 +556,19 @@ class FindInvRadius:
         stat_weight = {}
 
         for timeline, t_list in enumerate(temperature_list):
-            flat_outlier = sum(abs(t_list - mean)) / len(t_list)
+            if timeline == 0:
+                continue
 
-            # print(flat_outlier, ' ', flat_outlier_limitation)
-            if flat_outlier > flat_outlier_limitation:
+            # flat_outlier = sum(abs(t_list - mean)) / len(t_list)
+            flat_outlier = np.std(t_list)
+
+            # print(flat_outlier, ' ', std_low_limit)
+            if flat_outlier > std_low_limit:
                 candidates = []
                 plane_area_direction_prev = 1
                 for i in range(window_width, area, window_width):
+                    if i < channel_offset:
+                        continue
 
                     analysis_area = t_list[i-1:i + window_width]
 
@@ -383,10 +579,9 @@ class FindInvRadius:
                         """ Analysis only analysis_area which have intersection with mean value"""
                         upper_area = 0
                         under_area = 0
-                        for t_analysis in analysis_area:
+                        for t_i, t_analysis in enumerate(analysis_area):
                             upper_area = 1 if t_analysis > mean else upper_area
                             under_area = 1 if t_analysis < mean else under_area
-                            # print(under_area, ' ', upper_area)
 
                         """ Candidates => (range of points, temperature at each point) """
                         if upper_area == 1 and under_area == 1:
@@ -400,28 +595,29 @@ class FindInvRadius:
                     candidate_list.append((timeline, candidates))
 
         if len(stat_weight) == 0:
-            sys.exit('Error: flat_outlier_limitation is too big')
+            # print('Error: std_low_limit is too big')
+            return 0
 
         search_area_max = max(stat_weight.items(), key=itemgetter(1))
         search_area = search_area_max[0]
 
-        candidate_info = 0
-        if search_area_max[1] < 1000:
-            return candidate_info
+        # candidate_info = 0
+        # if search_area_max[1] < 1000:
+        #     return candidate_info
 
         temperature_list = np.transpose(temperature_list)
-        main_candidate_index = self.sum_deviation(temperature_list[search_area:(search_area + window_width)], mean)
+        main_candidate_index = self.sum_deviation(temperature_list[search_area:(search_area + window_width)])
         main_candidate_index = search_area + main_candidate_index
 
         return main_candidate_index
 
-    def inv_radius_intersection(self, temperature_list, window_width, flat_outlier_limitation, r_maj):
+    def inv_radius_intersection(self, temperature_list, window_width, std_low_limit, r_maj):
 
         """ -----------------------------------------
             version: 0.2.1
             desc: define if list of nums increase or decrease
             :param temperature_list: 2d array of nums normalised on 1
-            :param flat_outlier_limitation: float val to skip flat regions
+            :param std_low_limit: float val to skip flat regions
             :param window_width: int val of len by which make plane indicating
             :return main_candidate_index: value of the most probable index
                     of channel with inversion radius
@@ -436,7 +632,7 @@ class FindInvRadius:
         for timeline, t_list in enumerate(temperature_list):
             flat_outlier = sum(abs(t_list - mean)) / len(t_list)
 
-            if flat_outlier > flat_outlier_limitation:
+            if flat_outlier > std_low_limit:
                 plane_area_direction_prev = 1
                 for i in range(window_width, area, window_width):
 
@@ -477,7 +673,7 @@ class FindInvRadius:
             sorted_candidates.update({c[0]: inter_list})
 
         if len(stat_weight) == 0:
-            sys.exit('Error: flat_outlier_limitation is too big')
+            sys.exit('Error: std_low_limit is too big')
 
         search_area_max = max(stat_weight.items(), key=itemgetter(1))
         search_area = search_area_max[0]
@@ -527,20 +723,19 @@ class FindInvRadius:
         return intersection
 
     @staticmethod
-    def sum_deviation(search_area, mean):
+    def sum_deviation(search_area):
 
         """ -----------------------------------------
-            version: 0.2
+            version: 0.3
             desc: calculate deviation from mean val and give index of channel
             :param search_area: 2d array of nums normalised on 1 where can be channel with inv radius
-            :param mean: float mean val of temperature at the very beginning after norm on 1
             :return index of channel with minimum deviation from mean that means
                     that it is index of inversion radius
         ----------------------------------------- """
 
         deviation = []
         for t_list in search_area:
-            deviation.append(sum(abs(t_list - mean)))
+            deviation.append(np.std(t_list))
 
         return deviation.index(min(deviation))
 
@@ -578,26 +773,11 @@ class MachineLearning:
         from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
 
         data_test = np.array(data_test)[1000:1900, :60]
-        # print(len(data_test))
-        # exit()
 
         print('data_train len:', len(data_train))
-        # exit()
-
-        # X_test = []
-        # y_test = []
-        # for mixed_train in data_train[1001:1090]:
-        #     X_test.append(mixed_train[:2302])
-        #     y_test.append(mixed_train[-1])
 
         X_train = data_train[:, :-1]
         y_train = data_train[:, -1]
-
-        # X_train = []
-        # y_train = []
-        # for i, mixed_train in enumerate(data_train[:500]):
-        #     X_train.append(mixed_train[:1900])
-        #     y_train.append(mixed_train[-1])
 
         # KNeighborsClassifier(3),
         # SVC(kernel="linear", C=0.025),
@@ -614,10 +794,27 @@ class MachineLearning:
         print('Accuracy of Linear SVC classifier on training set: {:.2f}'
          .format(model.score(X_train, y_train)))
 
-        # print('Accuracy of Linear SVC classifier on test set: {:.2f}'
-        #  .format(model.score(X_test, y_test)))
-
         return model.predict(data_test)
 
-    def ml_find_collapse_duration(self):
-        pass
+    @staticmethod
+    def ml_find_collapse_duration(data_train, data_test):
+        from sklearn.tree import DecisionTreeClassifier
+
+        data_test = np.array(data_test)[15:45, 1000:1901]
+
+        print('data_train len:', len(data_train))
+        # print(data_train.shape)
+        # exit()
+
+        X_train = data_train[:, :-1]
+        y_train = data_train[:, -1]
+        # print(y_train[0])
+        # exit()
+
+        model = DecisionTreeClassifier().fit(X_train, y_train)
+
+        print('Accuracy of Linear SVC classifier on training set: {:.2f}'
+              .format(model.score(X_train, y_train)))
+
+        # exit()
+        return model.predict(data_test)
