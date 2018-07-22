@@ -32,13 +32,13 @@ class ViewData:
         print("VERSION: 0.4")
 
         # Single dis
-        dis_end = 25
+        dis_end = 2
         dis_start = dis_end - 1
 
         # Range of dis
-        dis_start, dis_end = 0, 64
+        # dis_start, dis_end = 0, 64
 
-        close_plots = 1
+        close_plots = 0
 
         """ Inversion radius """
         # self.build_plots_to_find_inversion_radius(start=dis_start, end=dis_end, median_filter_window_size=(3, 3),
@@ -56,7 +56,7 @@ class ViewData:
         # # # # # # # # # # # # # # # # # # # # # # # #
 
         # # # # # # # # # # # # # # # # # # # # # # # #
-        # plt.show()
+        plt.show()
         # # # # # # # # # # # # # # # # # # # # # # # #
 
         # self.extra_normalization()
@@ -393,7 +393,7 @@ class ViewData:
 
             """ 60 - due to the low accuracy after r_inv, which have influence on r_inv detection """
             print('Inversion radius detection')
-            temperature_list_rad = temperature_list_original[:60]
+            temperature_list_rad = temperature_list_original[:60, median_filter_window_size[0]:-median_filter_window_size[0]]
             r_maj_list = r_maj_list[:len(temperature_list_rad)]
             inv_radius_channel = dt.FindInvRadius().inv_radius(temperature_list=temperature_list_rad,
                                                                window_width=6, std_low_limit=0.01,
@@ -421,12 +421,18 @@ class ViewData:
 
             print("--------------------")
 
+            temperature_list_original = temperature_list_original[1:inv_radius_channel, 10:-10]
+            if collapse_duration_time[0] == 0 or \
+                    collapse_duration_time[1] == len(temperature_list_original) - 10 or \
+                    len(temperature_list_original) == 0:
+                continue
+
             print('Plotting results and save as images .PNG')
-            temperature_list_original = temperature_list_original[35:40, 10:-10]
             self.build_temperature_rmaj_single_plot(
-                temperature_list_original, self.window_width_val_dur, time_list[10:len(temperature_list_original[0])+10],
+                temperature_list_original, self.window_width_val_dur, range(len(temperature_list_original[0])),
                 highlight_r_inv, start_offset, median_filter,
                 time_limits=collapse_duration_time, discharge=dis)
+            # # # # # time_list[10:len(temperature_list_original[0]) + 10]
             # temperature_list_original = temperature_list_original[0:55]
             # self.build_temperature_rmaj_single_plot(
             #     temperature_list_original, self.window_width_val_dur, range(len(temperature_list_original[0])),
@@ -525,7 +531,7 @@ class ViewData:
 
             """ 60 - due to the low accuracy after r_inv, which have influence on r_inv detection """
             print('Inversion radius detection')
-            temperature_list_original = temperature_list_original[:60]
+            temperature_list_original = temperature_list_original[:60, median_filter_window_size[0]:-median_filter_window_size[0]]
             r_maj_list = r_maj_list[:len(temperature_list_original)]
             inv_radius_channel = dt.FindInvRadius().inv_radius(temperature_list=temperature_list_original,
                                                                window_width=6, std_low_limit=0.01,
@@ -720,15 +726,19 @@ class ViewData:
 
         axes.grid()
 
-        directory = 'results/v05/dis' + str(kwargs['discharge'] + 1) + '/'
+        directories = [
+            'results/v05/dis' + str(kwargs['discharge'] + 1) + '/',
+            'results/v05/T_time/'
+        ]
 
-        if not os.path.exists(directory):
-            os.makedirs(directory)
+        for directory in directories:
+            if not os.path.exists(directory):
+                os.makedirs(directory)
 
-        fig.savefig(directory + 'dis' + str(kwargs['discharge'] + 1) +
-                    '_T_time_series_w' + str(window_width) +
-                    '_median' + str(median_filter) + '_highlight' + str(highlight_r_inv) +
-                    '.png')
+            fig.savefig(directory + 'dis' + str(kwargs['discharge'] + 1) +
+                        '_T_time_series_w' + str(window_width) +
+                        '_median' + str(median_filter) + '_highlight' + str(highlight_r_inv) +
+                        '.png')
 
         return 1
 

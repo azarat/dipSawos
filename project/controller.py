@@ -276,23 +276,55 @@ class FindCollapseDuration:
         end = 0
         corelator = []
         for t_list_i, t_list in enumerate(temperature_list):
-            if t_list_i < 10:
+            if t_list_i < 150:
                 continue
-            coef = t_list / temperature_list[t_list_i - 10]
+            coef = t_list / temperature_list[t_list_i - 150]
             coef = np.std(coef)
             corelator.append(coef)
-        corelator = signal_processor.medfilt(corelator, 5)[6:]
+        corelator = corelator / (sum(corelator[:700]) / 700)
+        corelator = signal_processor.medfilt(corelator, 41)[41:]
+        # corelator = 1 / corelator
         std = corelator
 
-        if max(corelator[:700]) / max(corelator) > 0.4:
+        # print(np.std(corelator[:700]) / np.std(corelator))
+        # exit()
+
+        if max(corelator[:700]) / max(corelator) > 0.5:
+            max_std = max(corelator[:700]) + np.std(corelator[:700]) * 2.5
+        elif max(corelator[:700]) / max(corelator) > 0.3:
             max_std = max(corelator[:700]) + np.std(corelator[:700]) * 5
         else:
             max_std = (max(corelator) - min(corelator[:700])) / 2
 
+        # max_std = max(corelator[:700]) + np.std(corelator[:700]) * 20
+        max_std = (max(corelator) - min(corelator[:700])) / 2
+
+        coeff_prev = 0
+        cr_end = 0
         for t_i, t in enumerate(corelator):
             if t > max_std and end == 0:
-                    end = t_i - 10
+                corelator_reverse = corelator[:t_i]
+                corelator_reverse = corelator_reverse[::-1]
+                for cr_i, cr in enumerate(corelator_reverse):
+                    if cr_i < 150:
+                        continue
 
+                    coeff = cr / corelator_reverse[cr_i - 150]
+
+                    """ WHICH BETTER ??? """
+                    print(coeff)
+                    # if coeff_prev > coeff:
+                    #     cr_end = cr_i - 150
+                    #     break
+                    if coeff > 0.9:
+                        cr_end = cr_i - 150
+                        break
+
+                    coeff_prev = coeff
+                end = t_i - cr_end
+
+        # corelator = corelator.tolist()
+        # end = corelator.index(max(corelator))
         ##########################################
         import matplotlib.pyplot as plt
         fig, ax = plt.subplots()
@@ -302,7 +334,7 @@ class FindCollapseDuration:
         ax.plot(corelator[::-1])
 
         ax.set(xlabel='Inv. Time', ylabel='Coefficient',
-               title='Correlation coefficient')
+               title='Correlation coefficient END')
 
         for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
                      ax.get_xticklabels() + ax.get_yticklabels()):
@@ -458,41 +490,47 @@ class FindCollapseDuration:
         start = 0
         corelator = []
         for t_list_i, t_list in enumerate(temperature_list):
-            if t_list_i < 10:
+            if t_list_i >= len(temperature_list) - 150:
                 continue
-            coef = t_list / temperature_list[t_list_i - 10]
+            coef = t_list / temperature_list[t_list_i + 150]
             coef = np.std(coef)
             corelator.append(coef)
         corelator = corelator / (sum(corelator[:700]) / 700)
-        corelator = signal_processor.medfilt(corelator, 5)[6:]
+        corelator = signal_processor.medfilt(corelator, 5)[5:]
         std = corelator
 
-        if max(corelator[:700]) / max(corelator) > 0.4:
+        if max(corelator[:700]) / max(corelator) > 0.6:
+            max_std = max(corelator[:700]) + np.std(corelator[:700]) * 2
+        elif max(corelator[:700]) / max(corelator) > 0.4:
             max_std = max(corelator[:700]) + np.std(corelator[:700]) * 5
         else:
             max_std = (max(corelator) - min(corelator[:700])) / 2
 
+        max_std = max(corelator[:700]) + np.std(corelator[:700]) * 10
+
         for t_i, t in enumerate(corelator):
             if t > max_std and start == 0:
-                start = t_i - 10
+                start = t_i + 140
 
+        # corelator = corelator.tolist()
+        # start = corelator.index(max(corelator))
         ###############################################
-        # import matplotlib.pyplot as plt
-        # inds_up = [max_std for x in std]
-        # fig, ax = plt.subplots()
-        # fig.set_size_inches(15, 7)
-        # ax.plot(inds_up)
-        # ax.plot(corelator)
-        #
-        # ax.set(xlabel='Inv. Time', ylabel='Coefficient',
-        #        title='Correlation coefficient')
-        #
-        # for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
-        #              ax.get_xticklabels() + ax.get_yticklabels()):
-        #     item.set_fontsize(17)
-        #
-        # # plt.show()
-        # # exit()
+        import matplotlib.pyplot as plt
+        inds_up = [max_std for x in std]
+        fig, ax = plt.subplots()
+        fig.set_size_inches(15, 7)
+        ax.plot(inds_up)
+        ax.plot(corelator)
+
+        ax.set(xlabel='Inv. Time', ylabel='Coefficient',
+               title='Correlation coefficient START')
+
+        for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
+                     ax.get_xticklabels() + ax.get_yticklabels()):
+            item.set_fontsize(17)
+
+        # plt.show()
+        # exit()
         ###############################################
 
         return start
