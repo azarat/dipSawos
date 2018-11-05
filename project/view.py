@@ -28,35 +28,38 @@ class ViewData:
     boundary = (0.75, 1.5)
     # boundary = (-100, 100)
 
+    close_plots = 0
+
     def __init__(self):
-        print("VERSION: 0.4")
+        print("VERSION: 0.5")
 
-        # Single dis
-        dis_end = 2
-        dis_start = dis_end - 1
+        if self.close_plots == 0:
+            # Single dis
+            dis_end = 10
+            dis_start = dis_end - 1
+        else:
+            # Range of dis
+            dis_start, dis_end = 0, 64
 
-        # Range of dis
-        # dis_start, dis_end = 0, 64
-
-        close_plots = 0
 
         """ Inversion radius """
         # self.build_plots_to_find_inversion_radius(start=dis_start, end=dis_end, median_filter_window_size=(3, 3),
-        #                                           highlight_r_inv=1, start_offset=1, close_plots=close_plots)
+        #                                           highlight_r_inv=1, start_offset=1, close_plots=self.close_plots)
         # # # # # # # # # # # # # # # # # # # # # # # #
 
         """ Collapse duration """
         self.build_plots_to_find_collapse_time_duration(start=dis_start, end=dis_end, median_filter_window_size=(11, 11),
-                                                        highlight_r_inv=1, start_offset=1, close_plots=close_plots)
+                                                        highlight_r_inv=1, start_offset=1, close_plots=self.close_plots)
         # # # # # # # # # # # # # # # # # # # # # # # #
 
         """ Colormap overview """
         # self.build_plots_colormap(start=dis_start, end=dis_end, median_filter_window_size=(11, 11),
-        #                           start_offset=4, end_offset=-30, close_plots=close_plots)
+        #                           start_offset=4, end_offset=-30, close_plots=self.close_plots)
         # # # # # # # # # # # # # # # # # # # # # # # #
 
         # # # # # # # # # # # # # # # # # # # # # # # #
-        plt.show()
+        if self.close_plots == 0:
+            plt.show()
         # # # # # # # # # # # # # # # # # # # # # # # #
 
         # self.extra_normalization()
@@ -413,7 +416,7 @@ class ViewData:
 
             """ Identifying collapse duration """
             print('Determination of collapse duration')
-            collapse_duration_time = dt.FindCollapseDuration().collapse_duration(temperature_list_reverse, temperature_list_original, 6, inv_radius_channel, 1.03)
+            collapse_duration_time = dt.FindCollapseDuration().collapse_duration(temperature_list_reverse, temperature_list_original, 6, inv_radius_channel, 1.03, median_filter_window_size)
             collapse_duration_time = [int(x) for x in collapse_duration_time]
             print("Time segment: ", time_list[collapse_duration_time[0]], " ", time_list[collapse_duration_time[1]],
                   " | ", collapse_duration_time[0], " ", collapse_duration_time[1])
@@ -421,7 +424,7 @@ class ViewData:
 
             print("--------------------")
 
-            temperature_list_original = temperature_list_original[1:inv_radius_channel, 10:-10]
+            temperature_list_original = temperature_list_original[5:30, 10:-10]
             if collapse_duration_time[0] == 0 or \
                     collapse_duration_time[1] == len(temperature_list_original) - 10 or \
                     len(temperature_list_original) == 0:
@@ -429,10 +432,12 @@ class ViewData:
 
             print('Plotting results and save as images .PNG')
             self.build_temperature_rmaj_single_plot(
-                temperature_list_original, self.window_width_val_dur, range(len(temperature_list_original[0])),
+                temperature_list_original, self.window_width_val_dur,
+                # time_list[10:len(temperature_list_original[0]) + 10],
+                range(len(temperature_list_original[0])),
                 highlight_r_inv, start_offset, median_filter,
                 time_limits=collapse_duration_time, discharge=dis)
-            # # # # # time_list[10:len(temperature_list_original[0]) + 10]
+
             # temperature_list_original = temperature_list_original[0:55]
             # self.build_temperature_rmaj_single_plot(
             #     temperature_list_original, self.window_width_val_dur, range(len(temperature_list_original[0])),
@@ -609,7 +614,7 @@ class ViewData:
         cbs = fig.colorbar(cs)
         cbs.ax.set_ylabel('Temperature (a.u.)', fontsize=17)
 
-        directory = 'results/v05/dis' + str(kwargs['discharge'] + 1) + '/'
+        directory = 'results/v06/dis' + str(kwargs['discharge'] + 1) + '/'
 
         if not os.path.exists(directory):
             os.makedirs(directory)
@@ -693,11 +698,21 @@ class ViewData:
         temperature_list_buffer = []
         for channel in range(0, len(temperature), 5):
             temperature_list_buffer.append(temperature[channel])
-            axes.plot(
-                time_list[start_offset:-start_offset],
-                temperature[channel, start_offset:-start_offset],
-                color='b'
-            )
+            # axes.plot(
+            #     time_list[start_offset:-start_offset],
+            #     temperature[channel, start_offset:-start_offset],
+            #     color='b'
+            # )
+
+        temperature_median = []
+        for t in np.transpose(temperature[:, start_offset:-start_offset]):
+            temperature_median.append(np.median(t))
+
+        axes.plot(
+            time_list[start_offset:-start_offset],
+            temperature_median,
+            color='b'
+        )
 
         max_temp = max(map(max, temperature_list_buffer))
         min_temp = min(map(min, temperature_list_buffer))
@@ -727,8 +742,8 @@ class ViewData:
         axes.grid()
 
         directories = [
-            'results/v05/dis' + str(kwargs['discharge'] + 1) + '/',
-            'results/v05/T_time/'
+            'results/v06/dis' + str(kwargs['discharge'] + 1) + '/',
+            'results/v06/T_time/'
         ]
 
         for directory in directories:
@@ -818,10 +833,8 @@ class ViewData:
         # # # # # # # # # # # # # # # # # # # # # # # #
 
         # axes.set_xlim(min(r_maj), max(r_maj))
-        axes.set(ylabel='T (a.u.)', xlabel='R maj (m)',
-                 title='T(R_maj) series '
-                       'in various time instants\n'
-                       'R_inv: channel = ' + str(kwargs['r_inv']['channel']) +
+        axes.set(ylabel='T (a.u.)', xlabel='R (m)',
+                 title='R_inv: channel = ' + str(kwargs['r_inv']['channel']) +
                        ', value = ' + str(kwargs['r_inv']['value']) + 'm')
 
         for item in ([axes.title, axes.xaxis.label, axes.yaxis.label] +
@@ -830,7 +843,7 @@ class ViewData:
 
         method = ("_" + str(kwargs['method'])) if 'method' in kwargs else ''
 
-        directory = 'results/v05/dis' + str(kwargs['discharge'] + 1) + '/'
+        directory = 'results/v06/dis' + str(kwargs['discharge'] + 1) + '/'
 
         if not os.path.exists(directory):
             os.makedirs(directory)

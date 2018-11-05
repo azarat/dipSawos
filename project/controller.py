@@ -195,7 +195,7 @@ class PreProfiling:
 
 class FindCollapseDuration:
 
-    def collapse_duration(self, temperature_list_reverse, temperature_list, std_low_limit, inv_radius_channel, dynamic_outlier_limitation):
+    def collapse_duration(self, temperature_list_reverse, temperature_list, std_low_limit, inv_radius_channel, dynamic_outlier_limitation, median_filter_window_size):
 
         """ -----------------------------------------
             version: 0.3
@@ -206,10 +206,11 @@ class FindCollapseDuration:
             :return list with int val of indexes in time_list
         ----------------------------------------- """
 
-        collapse_start_time = self.collapse_start(temperature_list, inv_radius_channel)
+        collapse_start_time = self.collapse_start(temperature_list, median_filter_window_size, inv_radius_channel)
         collapse_end_time = self.collapse_end(temperature_list_reverse, inv_radius_channel, collapse_start_time)
 
-        return (collapse_start_time, collapse_end_time)
+        # return (collapse_start_time, collapse_end_time)
+        return (collapse_start_time[0], collapse_start_time[1])
 
     @staticmethod
     def collapse_end(temperature_list, inv_radius_channel, start):
@@ -229,37 +230,37 @@ class FindCollapseDuration:
 
         # ########################################## V06 INTERESTING
         # end = 0
-        # corelator = []
+        # correlator = []
         # for t_list_i, t_list in enumerate(temperature_list):
         #     if t_list_i == 0:
         #         continue
         #     coef = t_list / temperature_list[t_list_i - 1]
         #     coef = np.mean(coef)  # mean or std
-        #     corelator.append(coef)
-        # corelator = np.array(corelator)
-        # corelator = np.abs(corelator - 1)  # skip if std instead mean
-        # corelator = signal_processor.medfilt(corelator, 13)[51:]
-        # std = corelator
-        # max_std = max(corelator[:700]) + np.std(corelator[:700]) * 10
+        #     correlator.append(coef)
+        # correlator = np.array(correlator)
+        # correlator = np.abs(correlator - 1)  # skip if std instead mean
+        # correlator = signal_processor.medfilt(correlator, 13)[51:]
+        # std = correlator
+        # max_std = max(correlator[:700]) + np.std(correlator[:700]) * 10
         #
-        # if max(corelator[:700]) / max(corelator) > 0.5:
-        #     max_std = max(corelator[:700]) + np.std(corelator[:700]) * 1
-        # elif max(corelator[:700]) / max(corelator) > 0.3:
-        #     max_std = max(corelator[:700]) + np.std(corelator[:700]) * 2
+        # if max(correlator[:700]) / max(correlator) > 0.5:
+        #     max_std = max(correlator[:700]) + np.std(correlator[:700]) * 1
+        # elif max(correlator[:700]) / max(correlator) > 0.3:
+        #     max_std = max(correlator[:700]) + np.std(correlator[:700]) * 2
         #
-        # for t_i, t in enumerate(corelator):
+        # for t_i, t in enumerate(correlator):
         #     if t > max_std and end == 0:
         #             end = t_i - 10
         #
-        # # print(max(corelator[:700]) / max(corelator))
+        # # print(max(correlator[:700]) / max(correlator))
         # # exit()
         # ##########################################
         # import matplotlib.pyplot as plt
         # fig, ax = plt.subplots()
         # fig.set_size_inches(15, 7)
-        # max_std = [max_std for x in corelator]
+        # max_std = [max_std for x in correlator]
         # ax.plot(max_std)
-        # ax.plot(corelator)
+        # ax.plot(correlator)
         # # for t in range(0, 1900, 100):
         # #     ax.plot(temperature_list[t])
         #
@@ -274,71 +275,71 @@ class FindCollapseDuration:
 
         ########################################## V05 INTERESTING
         end = 0
-        corelator = []
+        correlator = []
         for t_list_i, t_list in enumerate(temperature_list):
             if t_list_i < 150:
                 continue
             coef = t_list / temperature_list[t_list_i - 150]
             coef = np.std(coef)
-            corelator.append(coef)
-        corelator = corelator / (sum(corelator[:700]) / 700)
-        corelator = signal_processor.medfilt(corelator, 41)[41:]
-        # corelator = 1 / corelator
-        std = corelator
+            correlator.append(coef)
+        correlator = correlator / (sum(correlator[:700]) / 700)
+        correlator = signal_processor.medfilt(correlator, 81)[81:]
+        # correlator = 1 / correlator
+        std = correlator
 
-        # print(np.std(corelator[:700]) / np.std(corelator))
+        # print(np.std(correlator[:700]) / np.std(correlator))
         # exit()
 
-        if max(corelator[:700]) / max(corelator) > 0.5:
-            max_std = max(corelator[:700]) + np.std(corelator[:700]) * 2.5
-        elif max(corelator[:700]) / max(corelator) > 0.3:
-            max_std = max(corelator[:700]) + np.std(corelator[:700]) * 5
+        if max(correlator[:700]) / max(correlator) > 0.5:
+            max_std = max(correlator[:700]) + np.std(correlator[:700]) * 2.5
+        elif max(correlator[:700]) / max(correlator) > 0.3:
+            max_std = max(correlator[:700]) + np.std(correlator[:700]) * 5
         else:
-            max_std = (max(corelator) - min(corelator[:700])) / 2
+            max_std = (max(correlator) - min(correlator[:700])) / 2
 
-        # max_std = max(corelator[:700]) + np.std(corelator[:700]) * 20
-        max_std = (max(corelator) - min(corelator[:700])) / 2
+        # max_std = max(correlator[:700]) + np.std(correlator[:700]) * 20
+        max_std = max(correlator) - (max(correlator) - max(correlator[:700])) / 3
 
         coeff_prev = 0
         cr_end = 0
-        for t_i, t in enumerate(corelator):
+        for t_i, t in enumerate(correlator):
             if t > max_std and end == 0:
-                corelator_reverse = corelator[:t_i]
-                corelator_reverse = corelator_reverse[::-1]
-                for cr_i, cr in enumerate(corelator_reverse):
-                    if cr_i < 150:
+                correlator_reverse = correlator[:t_i]
+                correlator_reverse = correlator_reverse[::-1]
+                for cr_i, cr in enumerate(correlator_reverse):
+                    if cr_i < 50:
                         continue
 
-                    coeff = cr / corelator_reverse[cr_i - 150]
+                    coeff = cr / correlator_reverse[cr_i - 50]
 
                     """ WHICH BETTER ??? """
-                    print(coeff)
+                    # print(coeff)
                     # if coeff_prev > coeff:
                     #     cr_end = cr_i - 150
                     #     break
                     if coeff > 0.9:
-                        cr_end = cr_i - 150
+                        cr_end = cr_i - 50
                         break
 
                     coeff_prev = coeff
                 end = t_i - cr_end
 
-        # corelator = corelator.tolist()
-        # end = corelator.index(max(corelator))
+        # correlator = correlator.tolist()
+        # end = correlator.index(max(correlator))
         ##########################################
-        import matplotlib.pyplot as plt
-        fig, ax = plt.subplots()
-        fig.set_size_inches(15, 7)
-        max_std = [max_std for x in corelator]
-        ax.plot(max_std)
-        ax.plot(corelator[::-1])
-
-        ax.set(xlabel='Inv. Time', ylabel='Coefficient',
-               title='Correlation coefficient END')
-
-        for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
-                     ax.get_xticklabels() + ax.get_yticklabels()):
-            item.set_fontsize(17)
+        # import matplotlib.pyplot as plt
+        # fig, ax = plt.subplots()
+        # fig.set_size_inches(15, 7)
+        # max_std = [max_std for x in correlator]
+        # ax.plot(max_std)
+        # ax.plot(correlator[::-1])
+        #
+        # ax.set(xlabel='Inv. Time', ylabel='Coefficient',
+        #        title='Correlation coefficient END')
+        #
+        # for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
+        #              ax.get_xticklabels() + ax.get_yticklabels()):
+        #     item.set_fontsize(17)
         # plt.show()
         # exit()
 
@@ -453,7 +454,7 @@ class FindCollapseDuration:
         return end
 
     @staticmethod
-    def collapse_start(temperature_list, r_inv_index):
+    def collapse_start(temperature_list, median_filter_window_size, r_inv_index=60):
 
         """ -----------------------------------------
             version: 0.3
@@ -463,11 +464,9 @@ class FindCollapseDuration:
             :return int val of index in time_list
         ----------------------------------------- """
 
-        if r_inv_index == 0:
-            r_inv_index = 60
-
+        median_f_s = max(median_filter_window_size)
         temperature_list = np.transpose(temperature_list[:r_inv_index])
-        temperature_list = temperature_list[10:-10]
+        temperature_list = temperature_list[median_f_s:-median_f_s]
 
 
         # start = 0
@@ -488,52 +487,98 @@ class FindCollapseDuration:
         #         start = t_i - 20
 
         start = 0
-        corelator = []
-        for t_list_i, t_list in enumerate(temperature_list):
-            if t_list_i >= len(temperature_list) - 150:
-                continue
-            coef = t_list / temperature_list[t_list_i + 150]
-            coef = np.std(coef)
-            corelator.append(coef)
-        corelator = corelator / (sum(corelator[:700]) / 700)
-        corelator = signal_processor.medfilt(corelator, 5)[5:]
-        std = corelator
+        # correlator = []
+        # for t_list_i, t_list in enumerate(temperature_list):
+        #     if t_list_i >= len(temperature_list) - 150:
+        #         continue
+        #     coeff = t_list
+        #     # coeff = t_list / temperature_list[t_list_i + 150]
+        #     coeff = np.std(coeff)
+        #     # coeff = np.median(coeff)
+        #     correlator.append(coeff)
+        # # correlator = correlator / (sum(correlator[:500]) / 500)
+        # correlator = signal_processor.medfilt(correlator, 51)[51:]
+        # std = correlator
+        #
+        # coeff_std = np.std(correlator[:500])
+        # coeff_mean = np.mean(correlator[:500])
+        # coeff_max = max(correlator)
+        # coeff_indicator = coeff_max * .05
+        # coeff_indicator = coeff_mean + coeff_std + coeff_indicator
+        # max_std = coeff_indicator
+        #
+        # max_ind = correlator.tolist().index(max(correlator))
+        # for i in range(max_ind, 0, -1):
+        #     if correlator[i] < coeff_indicator:
+        #         start = i + median_f_s + 51
+        #         break
 
-        if max(corelator[:700]) / max(corelator) > 0.6:
-            max_std = max(corelator[:700]) + np.std(corelator[:700]) * 2
-        elif max(corelator[:700]) / max(corelator) > 0.4:
-            max_std = max(corelator[:700]) + np.std(corelator[:700]) * 5
-        else:
-            max_std = (max(corelator) - min(corelator[:700])) / 2
-
-        max_std = max(corelator[:700]) + np.std(corelator[:700]) * 10
-
-        for t_i, t in enumerate(corelator):
-            if t > max_std and start == 0:
-                start = t_i + 140
-
-        # corelator = corelator.tolist()
-        # start = corelator.index(max(corelator))
         ###############################################
-        import matplotlib.pyplot as plt
-        inds_up = [max_std for x in std]
-        fig, ax = plt.subplots()
-        fig.set_size_inches(15, 7)
-        ax.plot(inds_up)
-        ax.plot(corelator)
+        correlator = []
+        for t_list_i, t_list in enumerate(temperature_list):
+            correlator.append(np.median(t_list))
+        # correlator = signal_processor.medfilt(correlator, 101)[101:]
 
-        ax.set(xlabel='Inv. Time', ylabel='Coefficient',
-               title='Correlation coefficient START')
+        step = 0
+        n_steps = 2
+        model_std = np.std(correlator[:500])
+        region = correlator
+        for c in range(7):
+            step = int(np.floor(len(region) / n_steps))
 
-        for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
-                     ax.get_xticklabels() + ax.get_yticklabels()):
-            item.set_fontsize(17)
+            if step < 1:
+                break
 
+            if c != 0:
+                region = correlator[start:start+step]
+                step = int(np.floor(len(region) / n_steps))
+
+            if step < 1:
+                break
+
+            for s in range(n_steps):
+                current_std = np.std(region[s*step:step*(s+1)])
+                # print(step)
+                print(current_std, " ", model_std*5, " region ", s*step+start, " : ", step*(s+1)+start)
+                if model_std*5 < current_std:
+                    start = start + s*step
+                    print(" ")
+                    break
+                # else:
+                #     model_std = current_std*2
+
+        start = start
+        end = start + step
+
+        # start = 1240
+        # end = 1323
+        #
+        # print(np.std(correlator[start:end]))
+        # print(np.min(correlator[start:end]))
+        # print(np.max(correlator[start:end]))
+        # print(correlator[start:end])
+
+        # start = start + 51
+        ###############################################
+        ###############################################
+        # import matplotlib.pyplot as plt
+        # fig, ax = plt.subplots()
+        # fig.set_size_inches(15, 7)
+        # ax.plot(correlator)
+        #
+        # ax.set(xlabel='Inv. Time', ylabel='Coefficient',
+        #        title='Correlation coefficient START')
+        #
+        # for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
+        #              ax.get_xticklabels() + ax.get_yticklabels()):
+        #     item.set_fontsize(17)
+        #
+        # plt.legend()
         # plt.show()
         # exit()
         ###############################################
 
-        return start
+        return (start, end)
 
 
 class FindInvRadius:
