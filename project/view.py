@@ -13,6 +13,8 @@ from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm, rc
 from matplotlib.ticker import LinearLocator, FormatStrFormatter
 
+import csv
+
 import scipy.io as io
 import time
 
@@ -28,14 +30,15 @@ class ViewData:
     boundary = (0.75, 1.5)
     # boundary = (-100, 100)
 
-    close_plots = 0
+    close_plots = 1
+    discharge = 25
 
     def __init__(self):
-        print("VERSION: 0.5")
+        print("VERSION: 0.8")
 
         if self.close_plots == 0:
-            # Single dis
-            dis_end = 10
+            # Single dis, offset for DB numbering
+            dis_end = self.discharge
             dis_start = dis_end - 1
         else:
             # Range of dis
@@ -48,24 +51,43 @@ class ViewData:
         # # # # # # # # # # # # # # # # # # # # # # # #
 
         """ Collapse duration """
-        self.build_plots_to_find_collapse_time_duration(start=dis_start, end=dis_end, median_filter_window_size=(11, 11),
-                                                        highlight_r_inv=1, start_offset=1, close_plots=self.close_plots)
+        results = self.build_plots_to_find_collapse_time_duration(start=dis_start, end=dis_end, median_filter_window_size=(9, 9),
+                                                        highlight_r_inv=1, close_plots=self.close_plots)
         # # # # # # # # # # # # # # # # # # # # # # # #
-
         """ Colormap overview """
-        # self.build_plots_colormap(start=dis_start, end=dis_end, median_filter_window_size=(11, 11),
+        # self.build_plots_colormap(start=dis_start, end=dis_end, median_filter_window_size=(9, 9),
         #                           start_offset=4, end_offset=-30, close_plots=self.close_plots)
         # # # # # # # # # # # # # # # # # # # # # # # #
 
         # # # # # # # # # # # # # # # # # # # # # # # #
         if self.close_plots == 0:
             plt.show()
+        else:
+            self.write_into_file(results)
         # # # # # # # # # # # # # # # # # # # # # # # #
 
         # self.extra_normalization()
         # self.export_inversion_radius()
         # self.ml_find_inv_radius()
         # self.ml_find_collapse_duration()
+
+    @staticmethod
+    def write_into_file(results):
+        """ -----------------------------------------
+            version: 0.7
+            desc: write results in file
+            :return 1
+        ----------------------------------------- """
+
+        with open('results/v06.csv', 'w') as csvfile:
+            csvwriter = csv.writer(csvfile)
+            csvwriter.writerow(['Discharge order', 'Discharge JET number', 'Start, ms', 'End, ms', 'Duration, ms',
+                                'Inv. radius channel', 'Inv. radius, m'])
+            for row_i, row in enumerate(results):
+                row = [row_i + 1] + row
+                csvwriter.writerow(row)
+
+        return 1
 
     def ml_find_collapse_duration(self):
         """ -----------------------------------------
@@ -309,7 +331,7 @@ class ViewData:
 
         return 1
 
-    def build_plots_to_find_collapse_time_duration(self, start, end, median_filter_window_size, highlight_r_inv, start_offset, close_plots):
+    def build_plots_to_find_collapse_time_duration(self, start, end, median_filter_window_size, highlight_r_inv, close_plots):
         """ -----------------------------------------
             version: 0.3
             desc: build plots with collapse duration time-points
@@ -317,7 +339,7 @@ class ViewData:
         ----------------------------------------- """
 
         print('Start detection: collapse duration')
-
+        results = []
         for dis in range(start, end):
 
             print("Discharge: " + str(dis + 1))
@@ -336,6 +358,7 @@ class ViewData:
             print('Remove channels with R_maj = nan')
             r_maj_list = self.processing.dict_to_list(data.channels_pos)
             temperature_list_original = data.temperature_original
+            shots = data.shots
 
             r_maj_list_buffer = []
             temperature_list_buffer = []
@@ -372,9 +395,9 @@ class ViewData:
             Filtering T(t), i.e., smoothing 
             WARNING: do not smooth due to info losses in 3d 
             """
-            print('Smoothing channels along timeline')
-            temperature_list_original = self.processing.filter(
-                temperature_list_original, self.window_width_val_dur, self.window_func)
+            print('Smoothing channels along timeline SKIP')
+            # temperature_list_original = self.processing.filter(
+            #     temperature_list_original, self.window_width_val_dur, self.window_func)
             # temperature_list_original = temperature_list_original  # skip filtration
             # # # # # # # # # # # # # # # # # # # # # # # #
 
@@ -406,7 +429,7 @@ class ViewData:
             Smooth T(r_maj)
             IMPORTANT to remove sawtooth behavior T(r_maj)
             """
-            print('Smoothing channels along radius')
+            print('Smoothing channels along radius SKIP')
             # temperature_list_original = self.processing.filter(
             #     np.transpose(temperature_list_original), self.window_width_rad_val, self.window_func)
             # temperature_list_original = np.transpose(temperature_list_original)
@@ -424,19 +447,18 @@ class ViewData:
 
             print("--------------------")
 
-            temperature_list_original = temperature_list_original[5:30, 10:-10]
             if collapse_duration_time[0] == 0 or \
-                    collapse_duration_time[1] == len(temperature_list_original) - 10 or \
+                    collapse_duration_time[1] == len(temperature_list_original) or \
                     len(temperature_list_original) == 0:
                 continue
 
             print('Plotting results and save as images .PNG')
             self.build_temperature_rmaj_single_plot(
                 temperature_list_original, self.window_width_val_dur,
-                # time_list[10:len(temperature_list_original[0]) + 10],
-                range(len(temperature_list_original[0])),
-                highlight_r_inv, start_offset, median_filter,
-                time_limits=collapse_duration_time, discharge=dis)
+                time_list,
+                # range(len(temperature_list_original[0])),
+                highlight_r_inv, median_filter_window_size[0], median_filter,
+                time_limits=collapse_duration_time, discharge=dis, inv_radius_channel=inv_radius_channel)
 
             # temperature_list_original = temperature_list_original[0:55]
             # self.build_temperature_rmaj_single_plot(
@@ -450,7 +472,16 @@ class ViewData:
             if close_plots == 1:
                 plt.close("all")
 
-        return 1
+            result = []
+            result.append(shots[dis])
+            result.append(time_list[collapse_duration_time[0]])
+            result.append(time_list[collapse_duration_time[1]])
+            result.append((time_list[collapse_duration_time[1]] - time_list[collapse_duration_time[0]]) * 1000)
+            result.append(r_maj_list_indexes[inv_radius_channel])
+            result.append(r_maj_list[inv_radius_channel])
+            results.append(result)
+        # return 1
+        return results
 
     def build_plots_to_find_inversion_radius(self, start, end, median_filter_window_size, highlight_r_inv, start_offset, close_plots):
         """ -----------------------------------------
@@ -694,35 +725,30 @@ class ViewData:
         fig, axes = plt.subplots()
         fig.set_size_inches(15, 7)
 
+        # if kwargs['inv_radius_channel'] > 1:
+        #     temperature = temperature[:kwargs['inv_radius_channel']]
+        # else:
+        #     temperature = temperature[:45]
+        temperature = temperature[:kwargs['inv_radius_channel']+10]
+
+        for t_list_index, t_list in enumerate(temperature):
+            if t_list_index % 4 == 0:
+                axes.plot(
+                    time_list[start_offset:-start_offset],
+                    t_list[start_offset:-start_offset],
+                    color="b"
+                )
+
         """ Time limits of collapse """
-        temperature_list_buffer = []
-        for channel in range(0, len(temperature), 5):
-            temperature_list_buffer.append(temperature[channel])
-            # axes.plot(
-            #     time_list[start_offset:-start_offset],
-            #     temperature[channel, start_offset:-start_offset],
-            #     color='b'
-            # )
-
-        temperature_median = []
-        for t in np.transpose(temperature[:, start_offset:-start_offset]):
-            temperature_median.append(np.median(t))
-
-        axes.plot(
-            time_list[start_offset:-start_offset],
-            temperature_median,
-            color='b'
-        )
-
-        max_temp = max(map(max, temperature_list_buffer))
-        min_temp = min(map(min, temperature_list_buffer))
+        max_temp = np.amax(temperature)
+        min_temp = np.amin(temperature)
 
         collapse_duration_txt = 0
         if kwargs['time_limits'] != 0 and kwargs['time_limits'][0] > 0 and kwargs['time_limits'][1] < len(time_list):
             if highlight_r_inv == 1:
                 rect = patches.Rectangle((time_list[kwargs['time_limits'][0]], min_temp),
                                          (time_list[kwargs['time_limits'][1]] - time_list[kwargs['time_limits'][0]]),
-                                         max_temp - min_temp, linewidth=0, edgecolor='r', facecolor='r', alpha=0.2)
+                                         max_temp - min_temp, linewidth=0, edgecolor='r', facecolor='r', alpha=0.3)
 
                 axes.add_patch(rect)
 

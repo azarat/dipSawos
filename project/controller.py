@@ -1,11 +1,14 @@
 import project.model as db_model
 from operator import itemgetter
 from scipy import signal as signal_processor
+from scipy.signal import find_peaks
 import numpy as np
 import sys
+import matplotlib.pyplot as plt
 
 
 class Controller:
+    internal_shots = 0
     internal_time_original = 0
     internal_temperature_original = 0
     internal_channels_pos = 0
@@ -24,9 +27,18 @@ class Controller:
         # self.channels_pos = db.channels_model
         self.channels_pos = db.channels
         self.time_original = db.time
+        self.shots = db.shots
         self.temperature_original = db.temperature
 
         return 1
+
+    @property
+    def shots(self):
+        return self.internal_shots
+
+    @shots.setter
+    def shots(self, value):
+        self.internal_shots = value
 
     @property
     def time_original(self):
@@ -207,378 +219,261 @@ class FindCollapseDuration:
         ----------------------------------------- """
 
         collapse_start_time = self.collapse_start(temperature_list, median_filter_window_size, inv_radius_channel)
-        collapse_end_time = self.collapse_end(temperature_list_reverse, inv_radius_channel, collapse_start_time)
+        collapse_end_time = self.collapse_end(temperature_list, inv_radius_channel, collapse_start_time, median_filter_window_size)
 
         # return (collapse_start_time, collapse_end_time)
-        return (collapse_start_time[0], collapse_start_time[1])
+        return (collapse_start_time, collapse_end_time)
 
     @staticmethod
-    def collapse_end(temperature_list, inv_radius_channel, start):
+    def gaussian(x, mu, sig):
+        return np.exp(-np.power(x - mu, 2.) / (2 * np.power(sig, 2.)))
 
+    # @staticmethod
+    def collapse_end(self, temperature_list, r_inv_index, start, median_filter_window_size):
         """ -----------------------------------------
-            version: 0.4
-            desc: search time point at which end Precursor + Fast Phase
+            version: 0.7
+            desc: search time point at which end
             :param temperature_list: 2d list of num
             :return int val of index in time_list
         ----------------------------------------- """
 
-        if inv_radius_channel == 0:
-            inv_radius_channel = 60
-
-        temperature_list = np.transpose(temperature_list[:inv_radius_channel])
-        temperature_list = temperature_list[10:-10]
-
-        # ########################################## V06 INTERESTING
-        # end = 0
-        # correlator = []
-        # for t_list_i, t_list in enumerate(temperature_list):
-        #     if t_list_i == 0:
-        #         continue
-        #     coef = t_list / temperature_list[t_list_i - 1]
-        #     coef = np.mean(coef)  # mean or std
-        #     correlator.append(coef)
-        # correlator = np.array(correlator)
-        # correlator = np.abs(correlator - 1)  # skip if std instead mean
-        # correlator = signal_processor.medfilt(correlator, 13)[51:]
-        # std = correlator
-        # max_std = max(correlator[:700]) + np.std(correlator[:700]) * 10
-        #
-        # if max(correlator[:700]) / max(correlator) > 0.5:
-        #     max_std = max(correlator[:700]) + np.std(correlator[:700]) * 1
-        # elif max(correlator[:700]) / max(correlator) > 0.3:
-        #     max_std = max(correlator[:700]) + np.std(correlator[:700]) * 2
-        #
-        # for t_i, t in enumerate(correlator):
-        #     if t > max_std and end == 0:
-        #             end = t_i - 10
-        #
-        # # print(max(correlator[:700]) / max(correlator))
-        # # exit()
-        # ##########################################
-        # import matplotlib.pyplot as plt
         # fig, ax = plt.subplots()
         # fig.set_size_inches(15, 7)
-        # max_std = [max_std for x in correlator]
-        # ax.plot(max_std)
-        # ax.plot(correlator)
-        # # for t in range(0, 1900, 100):
-        # #     ax.plot(temperature_list[t])
         #
-        # ax.set(xlabel='Inv. Time', ylabel='Coefficient',
-        #        title='Correlation coefficient')
+        # fig1, ax1 = plt.subplots()
+        # fig1.set_size_inches(15, 7)
+
+        temperature_list = temperature_list[r_inv_index:r_inv_index+10, median_filter_window_size[0]:-median_filter_window_size[0]]
+        correlators = []
+        height = []
+        step_backward = 20
+        smooth_window = 151
+        smooth_window_offset = round((smooth_window - 1) / 2)
+        for prototype_index, prototype in enumerate(temperature_list):
+
+            window = signal_processor.get_window('triang', smooth_window)
+            prototype = signal_processor.convolve(prototype, window, mode='valid')
+
+            # ax.plot(prototype[(step_backward+smooth_window_offset):])
+
+            ######################################### Financial momentum correlator
+            correlator = []
+            for t_i, t in enumerate(prototype):
+                if t_i > step_backward:
+                    # # Correlator based on all points in window
+                    # k = []
+                    # for i in range(step_backward):
+                    #     k.append(t / prototype[t_i - i])
+                    ##########################################
+
+                    # # Correlator based only on endpoints
+                    correlator.append(t / prototype[t_i - step_backward])
+
+            correlator = correlator / np.mean(correlator[:500])
+            correlator = np.abs(correlator - 1) + 1
+
+            # ax1.plot(np.abs(correlator-1))
+
+            correlator = correlator.tolist()
+            correlators.append(correlator)
+            ########################################## std correlator
+            # correlator = []
+            # for t_i, t in enumerate(prototype):
+            #     if t_i > step_backward:
+            #         correlator.append(np.std(prototype[t_i - step_backward:t_i]))
+            #
+            # correlator = correlator / np.mean(correlator[:500])
+            # correlator = correlator.tolist()
+            # correlators.append(correlator)
+            ##########################################
+
+            height.append(max(correlator) - 1)
+
+        work_index = height.index(max(height))
+        height = max(height)
+        correlator = correlators[work_index]
+        mu = correlator.index(max(correlator))
+        level = (height / 4) + 1
+
+        sigma_right = 0
+        for c_i, c in enumerate(correlator[::-1]):
+            if c > level:
+                sigma_right = len(correlator) - c_i
+                break
+
+        sigma_left = 0
+        for c_i, c in enumerate(correlator):
+            if c > level:
+                sigma_left = mu - c_i
+                break
+
+        # # Gaus, don't know if I need this
+        # sigma = sigma_left + sigma_right
+        # mu = np.round(((mu - sigma_left) + (mu + sigma_right)) / 2).astype(int)
         #
-        # for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
-        #              ax.get_xticklabels() + ax.get_yticklabels()):
-        #     item.set_fontsize(17)
-        # # plt.show()
-        # # exit()
-
-        ########################################## V05 INTERESTING
-        end = 0
-        correlator = []
-        for t_list_i, t_list in enumerate(temperature_list):
-            if t_list_i < 150:
-                continue
-            coef = t_list / temperature_list[t_list_i - 150]
-            coef = np.std(coef)
-            correlator.append(coef)
-        correlator = correlator / (sum(correlator[:700]) / 700)
-        correlator = signal_processor.medfilt(correlator, 81)[81:]
-        # correlator = 1 / correlator
-        std = correlator
-
-        # print(np.std(correlator[:700]) / np.std(correlator))
-        # exit()
-
-        if max(correlator[:700]) / max(correlator) > 0.5:
-            max_std = max(correlator[:700]) + np.std(correlator[:700]) * 2.5
-        elif max(correlator[:700]) / max(correlator) > 0.3:
-            max_std = max(correlator[:700]) + np.std(correlator[:700]) * 5
-        else:
-            max_std = (max(correlator) - min(correlator[:700])) / 2
-
-        # max_std = max(correlator[:700]) + np.std(correlator[:700]) * 20
-        max_std = max(correlator) - (max(correlator) - max(correlator[:700])) / 3
-
-        coeff_prev = 0
-        cr_end = 0
-        for t_i, t in enumerate(correlator):
-            if t > max_std and end == 0:
-                correlator_reverse = correlator[:t_i]
-                correlator_reverse = correlator_reverse[::-1]
-                for cr_i, cr in enumerate(correlator_reverse):
-                    if cr_i < 50:
-                        continue
-
-                    coeff = cr / correlator_reverse[cr_i - 50]
-
-                    """ WHICH BETTER ??? """
-                    # print(coeff)
-                    # if coeff_prev > coeff:
-                    #     cr_end = cr_i - 150
-                    #     break
-                    if coeff > 0.9:
-                        cr_end = cr_i - 50
-                        break
-
-                    coeff_prev = coeff
-                end = t_i - cr_end
-
-        # correlator = correlator.tolist()
-        # end = correlator.index(max(correlator))
-        ##########################################
-        # import matplotlib.pyplot as plt
-        # fig, ax = plt.subplots()
-        # fig.set_size_inches(15, 7)
-        # max_std = [max_std for x in correlator]
-        # ax.plot(max_std)
-        # ax.plot(correlator[::-1])
+        # sigma = sigma / 4
+        # x_values = np.linspace(0, len(correlator), len(correlator))
+        # gaus = (height * self.gaussian(x_values, mu, sigma)) + 1
         #
-        # ax.set(xlabel='Inv. Time', ylabel='Coefficient',
-        #        title='Correlation coefficient END')
-        #
-        # for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
-        #              ax.get_xticklabels() + ax.get_yticklabels()):
-        #     item.set_fontsize(17)
-        # plt.show()
-        # exit()
-
-        ########################################## V04
+        # deviation = 0.0145 * height
         # end = 0
-        # std = []
-        # for t_i, t in enumerate(temperature_list):
-        #     std.append(np.std(t))
-        #
-        # """
-        # We know that from 0 to 700th point figure is flat
-        # (first ~10 can be outliers due to median filtration)
-        # """
-        # std = signal_processor.medfilt(std, 51)[51:]
-        # max_std = max(std[:700]) + np.std(std[:700]) * 10
-        #
-        # for t_i, t in enumerate(std):
-        #     if t > max_std and std[t_i - 10] > max_std and end == 0:
-        #         end = t_i - 20
-        #
-        # ##########################################
-        # import matplotlib.pyplot as plt
-        # fig, ax = plt.subplots()
-        # fig.set_size_inches(15, 7)
-        # max_std = [max_std for x in std]
-        # ax.plot(max_std)
-        # ax.plot(std)
-        #
-        # ax.set(xlabel='Inv. Time', ylabel='Coefficient',
-        #        title='Correlation coefficient')
-        #
-        # for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
-        #              ax.get_xticklabels() + ax.get_yticklabels()):
-        #     item.set_fontsize(17)
-        # plt.show()
-        # exit()
-        #
-        ########################################## V03
-        #
-        # std = []
-        # for t in range(len(temperature_list)):
-        #     std.append(np.std(temperature_list[t]))
-        # std = signal_processor.medfilt(std, 51)[51:-51]
-        #
-        # # std = std[::-1]
-        # std_norm = sum(std[:200]) / 200
-        # std = std / std_norm
-        #
-        # level = (np.std(std[:500]) * 4) + max(std[:500])
-        #
-        # """ MUST TO DO. CHANGE LOGIC"""
-        # end = 0
-        # for l_i, l in enumerate(std):
-        #     if l > level:
-        #         end = l_i - 51
+        # for g_i, g in enumerate(gaus[::-1]):
+        #     if (g - 1) > deviation:
+        #         end = len(correlator) - g_i + step_backward + smooth_window_offset  # !!!!!!!!!!!!!!!!11
         #         break
+        ##########################################
 
-        end = len(std) - end
 
-        # colerator = []
-        # cor_prev = 0
-        # end = 0
-        # end_up = 0
-        # end_down = 10000000
-        # indicator_up = 1.01
-        # indicator_down = 0.99
-        # for val_i, val in enumerate(std):
-        #     if val_i == 0:
-        #         cor_prev = val
-        #     else:
-        #         cor = cor_prev / val
-        #         colerator.append(cor)
-        #
-        #         cor_prev = val
-        #
-        # colerator = signal_processor.medfilt(colerator, 11)[11:-11]
-        # for c_i, c in enumerate(colerator):
-        #     if c > indicator_up > 0 and colerator[c_i - 1] > indicator_up > 0:
-        #         if end_up == 0:
-        #             end_up = c_i + 10
-        #
-        #     if c < indicator_down > 0 and colerator[c_i - 1] < indicator_down > 0:
-        #         if end_down == 10000000:
-        #             end_down = c_i + 10
-        #
-        #     if end_down < end_up:
-        #         end = end_down
-        #     else:
-        #         end = end_up
-        #
-        # end = len(std) - end
-
-        # inds_up = [indicator_up for x in colerator]
-        # inds_down = [indicator_down for x in colerator]
-        # import matplotlib.pyplot as plt
+        ########################################## DEBUG ploting
         # fig, ax = plt.subplots()
         # fig.set_size_inches(15, 7)
-        # ax.plot(inds_up)
-        # ax.plot(inds_down)
-        # ax.plot(colerator)
-        #
-        # ax.set(xlabel='Inv. Time', ylabel='Coefficient',
-        #        title='Correlation coefficient')
-        #
-        # for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
-        #              ax.get_xticklabels() + ax.get_yticklabels()):
-        #     item.set_fontsize(17)
-        #
-        # plt.show()
-        # exit()
+        # prototype = temperature_list[work_index]
+        # prototype = prototype / np.mean(prototype[:500])
+        # ax.plot(correlator)
+        # ax.plot(prototype[(step_backward+smooth_window_offset):])
+        ##########################################
 
+        end = sigma_right + step_backward + smooth_window_offset
         return end
 
-    @staticmethod
-    def collapse_start(temperature_list, median_filter_window_size, r_inv_index=60):
-
+    # @staticmethod
+    def collapse_start(self, temperature_list, median_filter_window_size, r_inv_index=60):
         """ -----------------------------------------
-            version: 0.3
+            version: 0.7
             desc: search time point at which start Precursor Phase
             :param temperature_list: 2d list of num
-            :param std_low_limit: float val of min deviation which indicate start index
             :return int val of index in time_list
         ----------------------------------------- """
 
-        median_f_s = max(median_filter_window_size)
-        temperature_list = np.transpose(temperature_list[:r_inv_index])
-        temperature_list = temperature_list[median_f_s:-median_f_s]
+        fig, ax = plt.subplots(2, 2)
+        fig.set_size_inches(15, 7)
 
+        temperature_list = temperature_list[:r_inv_index-3, median_filter_window_size[0]:-median_filter_window_size[0]]
+        correlators = []
+        height = []
+        prominence = []
+        step_backward = 21
+        smooth_window = 51
+        medfit_width = 51
+        smooth_window_offset = round(smooth_window / 2)
+        step_backward_offset = round(step_backward / 2)
+        for prototype_index, prototype in enumerate(temperature_list):
 
-        # start = 0
-        # std = []
-        # for t_i, t in enumerate(temperature_list):
-        #     std.append(np.std(t))
+            prototype = signal_processor.medfilt(prototype, medfit_width)
+            window = signal_processor.get_window('triang', smooth_window)
+            prototype = signal_processor.convolve(prototype, window, mode='valid')
 
-        """ 
-        We know that from 0 to 700th point figure is flat
-        (first ~10 can be outliers due to median filtration)
-        """
-        # std = signal_processor.medfilt(std, 51)
-        # max_std = max(std[10:700]) + np.std(std[10:700]) * 15
-        # # max_std = (max_std + max(std) / 4) / 2
+            ax[0, 0].plot(prototype[(step_backward+smooth_window_offset):])
+
+            """ Financial momentum correlator """
+            correlator = []
+            for t_i, t in enumerate(prototype):
+                if t_i > step_backward:
+                    """ Correlator based on all points in window """
+                    # k = []
+                    # for i in range(step_backward):
+                    #     k.append(t / prototype[t_i - i])
+                    # correlator.append(np.mean(k))
+                    ##########################################
+
+                    """ Correlator based only on endpoints """
+                    correlator.append(prototype[t_i - step_backward] / t)
+
+            correlator = correlator / np.mean(correlator[:500])
+            correlator = np.abs(correlator - 1) + 1
+
+            ax[0, 1].plot(correlator)
+
+            correlator = correlator.tolist()
+            correlators.append(correlator)
+
+            """ Std correlator """
+            # correlator = []
+            # for t_i, t in enumerate(prototype):
+            #     if t_i > step_backward:
+            #         correlator.append(np.std(prototype[t_i - step_backward:t_i]))
+            #
+            # correlator = correlator / np.mean(correlator[:500])
+            # correlator = correlator.tolist()
+            # correlators.append(correlator)
+            ##########################################
+
+            """ Determine height of current correlator """
+            height_val = max(correlator) - 1
+            height.append(height_val)
+
+            """ Determine prominence of current correlator """
+            peaks, _ = find_peaks(correlator, prominence=(height_val / 1.5))
+            correlator = np.asarray(correlator)
+            prominence.append(np.mean(correlator[peaks]))
+
+        """ Determine work_index by max value of max prominence in whole set of correlators
+            Which one is better??? """
+        work_index = prominence.index(max(prominence))
+        """ Determine work_index by max height in whole set of correlators """
+        # work_index = height.index(max(height))
+
+        height = max(height)
+        correlator = correlators[work_index]
+        mu = correlator.index(max(correlator))
+
+        level_height = (height / 5) + 1
+        peaks, _ = find_peaks(correlator[:500])
+        mean_peak_height = np.mean(np.asarray(correlator)[peaks])
+
+        level_std = ((mean_peak_height - 1) * 10) + np.mean(correlator[:500])
+        level = level_height if level_std > level_height else level_std
+
+        sigma_right = 0
+        for c_i, c in enumerate(correlator[::-1]):
+            if c > level:
+                sigma_right = len(correlator) - c_i
+                break
+
+        sigma_left = 0
+        for c_i, c in enumerate(correlator):
+            if c > level:
+                sigma_left = c_i
+                break
+
+        """ Gaus, don't know if I need this """
+        # sigma = sigma_left + sigma_right
+        # mu = np.round(((mu - sigma_left) + (mu + sigma_right)) / 2).astype(int)
         #
-        # for t_i, t in enumerate(std):
-        #     if t > max_std and std[t_i - 10] > max_std and start == 0:
-        #         start = t_i - 20
-
-        start = 0
-        # correlator = []
-        # for t_list_i, t_list in enumerate(temperature_list):
-        #     if t_list_i >= len(temperature_list) - 150:
-        #         continue
-        #     coeff = t_list
-        #     # coeff = t_list / temperature_list[t_list_i + 150]
-        #     coeff = np.std(coeff)
-        #     # coeff = np.median(coeff)
-        #     correlator.append(coeff)
-        # # correlator = correlator / (sum(correlator[:500]) / 500)
-        # correlator = signal_processor.medfilt(correlator, 51)[51:]
-        # std = correlator
+        # sigma = sigma / 4
+        # x_values = np.linspace(0, len(correlator), len(correlator))
+        # gaus = (height * self.gaussian(x_values, mu, sigma)) + 1
         #
-        # coeff_std = np.std(correlator[:500])
-        # coeff_mean = np.mean(correlator[:500])
-        # coeff_max = max(correlator)
-        # coeff_indicator = coeff_max * .05
-        # coeff_indicator = coeff_mean + coeff_std + coeff_indicator
-        # max_std = coeff_indicator
-        #
-        # max_ind = correlator.tolist().index(max(correlator))
-        # for i in range(max_ind, 0, -1):
-        #     if correlator[i] < coeff_indicator:
-        #         start = i + median_f_s + 51
+        # deviation = 0.0145 * height
+        # end = 0
+        # for g_i, g in enumerate(gaus[::-1]):
+        #     if (g - 1) > deviation:
+        #         end = len(correlator) - g_i + step_backward + smooth_window_offset  # !!!!!!!!!!!!!!!!11
         #         break
+        ##########################################
 
-        ###############################################
-        correlator = []
-        for t_list_i, t_list in enumerate(temperature_list):
-            correlator.append(np.median(t_list))
-        # correlator = signal_processor.medfilt(correlator, 101)[101:]
+        """ DEBUG ploting etc. """
+        # print(sigma_left)
+        prototype = temperature_list[work_index]
+        prototype = prototype / np.mean(prototype[:500])
 
-        step = 0
-        n_steps = 2
-        model_std = np.std(correlator[:500])
-        region = correlator
-        for c in range(7):
-            step = int(np.floor(len(region) / n_steps))
+        window = signal_processor.get_window('triang', smooth_window)
+        prototype_smooth = signal_processor.convolve(temperature_list[work_index], window, mode='valid')
+        prototype_smooth = prototype_smooth / np.mean(prototype_smooth[:500])
 
-            if step < 1:
-                break
+        ax[1, 0].plot(prototype_smooth)
+        ax[1, 1].plot(prototype[(step_backward+smooth_window_offset):])
+        ax[1, 1].plot([level for x in correlator])
+        ax[1, 1].plot(correlator)
 
-            if c != 0:
-                region = correlator[start:start+step]
-                step = int(np.floor(len(region) / n_steps))
+        peaks, _ = find_peaks(correlator, prominence=(height / 1.5))
+        correlator = np.asarray(correlator)
+        plt.plot(correlator)
+        plt.plot(peaks, correlator[peaks], "x")
+        ##########################################
 
-            if step < 1:
-                break
-
-            for s in range(n_steps):
-                current_std = np.std(region[s*step:step*(s+1)])
-                # print(step)
-                print(current_std, " ", model_std*5, " region ", s*step+start, " : ", step*(s+1)+start)
-                if model_std*5 < current_std:
-                    start = start + s*step
-                    print(" ")
-                    break
-                # else:
-                #     model_std = current_std*2
-
-        start = start
-        end = start + step
-
-        # start = 1240
-        # end = 1323
-        #
-        # print(np.std(correlator[start:end]))
-        # print(np.min(correlator[start:end]))
-        # print(np.max(correlator[start:end]))
-        # print(correlator[start:end])
-
-        # start = start + 51
-        ###############################################
-        ###############################################
-        # import matplotlib.pyplot as plt
-        # fig, ax = plt.subplots()
-        # fig.set_size_inches(15, 7)
-        # ax.plot(correlator)
-        #
-        # ax.set(xlabel='Inv. Time', ylabel='Coefficient',
-        #        title='Correlation coefficient START')
-        #
-        # for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
-        #              ax.get_xticklabels() + ax.get_yticklabels()):
-        #     item.set_fontsize(17)
-        #
-        # plt.legend()
-        # plt.show()
-        # exit()
-        ###############################################
-
-        return (start, end)
+        start = sigma_left + step_backward + smooth_window_offset - step_backward_offset
+        return start
 
 
 class FindInvRadius:

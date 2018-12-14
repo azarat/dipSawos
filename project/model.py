@@ -17,6 +17,7 @@ class Model:
 
 
 class LoadDB:
+    internal_shots = 0
     internal_time = 0
     internal_temperature = 0
     internal_channels = 0
@@ -50,6 +51,7 @@ class LoadDB:
 
         self.time = sawdata['saw_data'][0, 0][data_type][0, 0]['TIM01'][0, discharge].ravel()
         self.temperature = temperature_temp
+        self.shots = sawdata['saw_data'][0, 0]['SHOT'].ravel()
 
     @property
     def channels(self):
@@ -66,6 +68,14 @@ class LoadDB:
     @channels_model.setter
     def channels_model(self, value):
         self.internal_channels_model = value
+
+    @property
+    def shots(self):
+        return self.internal_shots
+
+    @shots.setter
+    def shots(self, value):
+        self.internal_shots = value
 
     @property
     def time(self):
