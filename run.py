@@ -2,14 +2,16 @@ import project.view as v
 visual = v.ViewData()
 
 """ Other tests all """
-# from matplotlib import pyplot as mp
-# import numpy as np
+# # temperature_matrix = np.asarray(temperature_matrix)[:, 1200:1400]
+# x = [i for i in range(len(temperature_matrix[0]))]
+# y = [i for i in range(len(temperature_matrix))]
+# x, y = np.meshgrid(x, y)
+# z = np.array(temperature_matrix)
 #
-# def gaussian(x, mu, sig):
-#     return np.exp(-np.power(x - mu, 2.) / (2 * np.power(sig, 2.)))
+# fig = plt.figure()
+# ax = plt.axes(projection='3d')
 #
-# x_values = np.linspace(-6, 6, 120)
-# for mu, sig in [(-1, 1), (0, 2), (2, 3)]:
-#     mp.plot(x_values, gaussian(x_values, mu, sig))
-#
-# mp.show()
+# ax.plot_surface(x, y, z, cmap=cm.CMRmap)
+# plt.show()
+# exit('--------------------------------------EXIT')
+
