@@ -17,17 +17,110 @@ class QProfile:
         temperature_matrix = np.asarray([channel[2] for channel in data])
         temperature_matrix_public = data_public
 
-        xc_index = self.find_center(temperature_matrix, channel_position, channel_index)
+        xc_index_order = self.nearest_channel_index(self.center, channel_position, channel_index)
+        xc_index = xc_index_order['index']
 
-        xs = self.find_xs(temperature_matrix_public, temperature_matrix, channel_position, channel_index, xc_index, inv_radius, collapse_duration_time[1])
+        # xs = self.find_xs(temperature_matrix_public, temperature_matrix, channel_position, channel_index, xc_index, inv_radius, collapse_duration_time[1])
+        # xs = np.power((np.sqrt(xs) + self.center), 2)
+        # xs_index_order = self.nearest_channel_index(np.sqrt(xs), channel_position, channel_index)
 
-        self.integrate_eiler(xs, xs)
+        """ Normalization to PPF """
+        temperature_matrix = self.normalization_ppf(temperature_matrix, temperature_matrix_public, channel_index)
+
+        temperature_pre_post = {
+            'pre': np.transpose(temperature_matrix)[500],
+            'post': np.transpose(temperature_matrix)[-500]
+        }
+
+        xs = self.find_xs_ppf(temperature_pre_post, channel_position)
+        xs_index_order = self.nearest_channel_index(np.sqrt(xs), channel_position, channel_index)
+
+        dependency = self.integrate_eiler(xs, xs_index_order, channel_position, temperature_pre_post, inv_radius)
 
         return 1
 
+    def find_xs_ppf(self, temperature_pre_post, channel_position):
+        temperature_xc = self.temperature_interpolation(np.power(self.center, 2), channel_position, temperature_pre_post['post'])
+
+        diff = [temperature_xc - v for v in temperature_pre_post['pre']]
+
+        channel_before = 0
+        channel_after = 0
+        for i, v in enumerate(diff):
+            if v >= 0:
+                channel_after = i
+                channel_before = i-1
+                break
+
+        position_gap = np.linspace(channel_position[channel_before], channel_position[channel_after], 100)
+        temperature_gap = np.linspace(temperature_pre_post['pre'][channel_before], temperature_pre_post['pre'][channel_after], 100)
+
+        diff_gap = [temperature_xc-v for v in temperature_gap]
+
+        point_cs = 0
+        for i, v in enumerate(diff_gap):
+            if v >= 0:
+                point_cs = i
+                break
+
+        position_cs = position_gap[point_cs]
+
+        return np.power(position_cs, 2)
+
+
     @staticmethod
-    def temperature_interpolation(inter_position):
-        return inter_position
+    def normalization_ppf(temperature_matrix, temperature_matrix_public, channel_index):
+        """ -----------------------------------------
+            version: 0.9
+            desc:
+            :return
+        ----------------------------------------- """
+
+        temperature_matrix_norm = []
+        for order, index in enumerate(channel_index):
+            temperature_matrix_norm.append(temperature_matrix[order] * temperature_matrix_public[index][1])
+
+        return temperature_matrix_norm
+
+    def temperature_interpolation(self, inter_position, channel_position, temperature):
+
+        channel_position = [np.power(v, 2) for v in channel_position]
+        diff = [v-inter_position for v in channel_position]
+
+        channel_after = 0
+        channel_before = 0
+        for i, v in enumerate(diff):
+            if v >= 0:
+                channel_before = i-1
+                channel_after = i
+                break
+
+        """ Difference between siblings temperature"""
+        diff_temperature = temperature[channel_after] - temperature[channel_before]
+        a = np.abs(diff_temperature)
+
+        """ Difference between siblings position (distance) """
+        b = channel_position[channel_after] - channel_position[channel_before]
+        c = np.sqrt( np.power(a, 2) + np.power(b, 2) )
+
+        """ Difference between interpoint and channel after (distance) """
+        b2 = channel_position[channel_after] - inter_position
+        """ Difference between interpoint and channel before (distance) """
+        b1 = b - b2
+
+        """ Hypotenuse between channel before and interpoint """
+        c1 = b1 * c / b
+
+        """ Difference between interpoint temperature and one of siblings temperature """
+        h1 = np.sqrt( np.power(c1, 2) - np.power(b1, 2) )
+
+        intertemperature = 0
+        if diff_temperature <= 0:
+            intertemperature = temperature[channel_before] - h1
+        elif diff_temperature > 0:
+            intertemperature = temperature[channel_before] + h1
+
+        return intertemperature
 
     def find_xs(self, temperature_matrix_public, temperature_matrix, channel_position, channel_index, xc_index, inv_radius, crash_end):
         """ -----------------------------------------
@@ -38,14 +131,14 @@ class QProfile:
             :param temperature_matrix:
             :param channel_position:
             :param channel_index:
-            :param xc:
-            :return:
+            :return: position of xs [float]
         ----------------------------------------- """
 
         """ convert ndarray to list """
         channel_index = [v for v in channel_index]
 
         t_center_precrash_norm = 1
+        """ we should calculate xs from the magnet center (not from the center of torus) """
         x_inv = pow(float(inv_radius['position'])-self.center, 2)
 
         t_center_precrash_public = temperature_matrix_public[xc_index][3]
@@ -62,22 +155,116 @@ class QProfile:
 
         return xs
 
-    def find_center(self, temperature_matrix, channel_position, channel_index):
+    @staticmethod
+    def nearest_channel_index(position, channel_position, channel_index):
+        """ -----------------------------------------
+            version: 0.9
+            desc: find the index of the channel which is nearest to the position
+            :param position:
+            :param channel_position:
+            :param channel_index:
+            :return: index of nearest channel to the input position value [int]
+        ----------------------------------------- """
 
-        xc = self.center
-
-        channel_position_diff = [abs(x - xc) for x in channel_position]
+        channel_position_diff = [abs(x - position) for x in channel_position]
         diff_min = min(channel_position_diff)
-        xc_channel_order = channel_position_diff.index(diff_min)
+        position_channel_order = channel_position_diff.index(diff_min)
 
-        xc_index = channel_index[xc_channel_order]
+        channel_index_and_order = {
+            'index': channel_index[position_channel_order],
+            'order': position_channel_order
+        }
 
-        return xc_index
+        return channel_index_and_order
 
-    def integrate_eiler(self, x2, x1):
-        inter_position = x2 - x1
-        temperature = self.temperature_interpolation(inter_position)
+    @staticmethod
+    def integration_function(temperature_plus, temperature_1, temperature_2):
+        return (temperature_1 - temperature_plus) / (temperature_2 - temperature_plus)
 
-        input_function = (1 - temperature) / (temperature - 1)
+    def integrate_eiler(self, xs, xs_index_order, channel_position, temperature_pre_post, inv_radius):
 
-        return 1
+        n_steps = 1000
+        integration_boundaries = np.linspace(xs, np.power(self.center, 2), n_steps)
+
+        y = 0
+        h = 0
+        x_rate = 0
+        temperature_1 = 0
+        temperature_2 = 0
+        temperature_plus = 0
+        function_value = 0
+        x_1 = []
+        f = []
+        T_1 = []
+        T_2 = []
+        T_plus = []
+        x_plus = []
+        dependency = []
+        for i, inter_position in enumerate(integration_boundaries):
+
+            x_rate = i
+
+            if i == 0:
+                y = xs
+                function_value = -1
+            else:
+
+                h = (inter_position - integration_boundaries[i-1])
+                y = y + h * function_value
+
+                temperature_1 = self.temperature_interpolation(integration_boundaries[i], channel_position, temperature_pre_post['pre'])
+                temperature_2 = self.temperature_interpolation(y, channel_position, temperature_pre_post['pre'])
+                temperature_plus = self.temperature_interpolation((y - integration_boundaries[i] + np.power(self.center, 2)), channel_position, temperature_pre_post['post'])
+                function_value = self.integration_function(temperature_plus, temperature_1, temperature_2)
+
+            if np.isnan(inter_position) or np.isnan(y - integration_boundaries[i] + np.power(self.center, 2)) \
+                    or np.isnan(y) or np.isnan(temperature_1) or np.isnan(temperature_2) or np.isnan(temperature_plus) \
+                    or y < 0 or function_value >= 0:
+                break
+
+            dependency.append(y)
+            x_plus.append((y - integration_boundaries[i] + np.power(self.center, 2)))
+            x_1.append(integration_boundaries[i])
+            f.append(function_value)
+            T_1.append(temperature_1)
+            T_2.append(temperature_2)
+            T_plus.append(temperature_plus)
+
+            print("-------------------------STEP ", i)
+            print("x1 = ", integration_boundaries[i], " --- y = ", y, " --- x+ = ", (y - integration_boundaries[i] + np.power(self.center, 2)))
+            print("-------------------------")
+            print("T1 = ", temperature_1, " --- T2 = ", temperature_2, " --- T+ = ", temperature_plus)
+            print("-------------------------")
+            print("f = ", function_value)
+            print("-------------------------")
+
+        plt.close("all")
+        x_rate = integration_boundaries[:x_rate]
+        temperature_xc = self.temperature_interpolation(np.power(self.center, 2), channel_position,
+                                                        temperature_pre_post['post'])
+        channel_position = [np.power(v, 2) for v in channel_position]
+        fig, ax = plt.subplots(1, 1)
+        fig.set_size_inches(15, 7)
+        ax.plot(channel_position, temperature_pre_post['post'])
+        ax.plot(channel_position, temperature_pre_post['pre'])
+        plt.axvline(x=float(np.power(self.center, 2)), label="Xc", color="black")
+        plt.axvline(x=float(xs), label="Xs", color="yellow")
+        plt.axvline(x=float(x_1[-1]), label="X1", color="green")
+        plt.axvline(x=float(dependency[-1]), label="X2/y", color="red")
+        plt.axvline(x=float(x_plus[-1]), label="X+", color="blue")
+        plt.axhline(y=float(temperature_xc), label="Tc")
+        plt.axvline(x=np.power(float(inv_radius['position']), 2), label="r inv")
+        plt.legend()
+
+        fig, ax = plt.subplots(1, 1)
+        fig.set_size_inches(15, 7)
+        ax.plot(x_rate, dependency, label="X2(X1)")
+        plt.axvline(x=float(xs), label="Xs", color="yellow")
+        plt.axhline(y=float(xs), label="Xs", color="yellow")
+        plt.axvline(x=float(np.power(self.center, 2)), label="Xc", color="black")
+        plt.legend()
+
+        plt.show()
+        exit()
+
+        return dependency

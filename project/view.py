@@ -32,7 +32,7 @@ class ViewData:
     boundary = (0.75, 1.5)
 
     close_plots = 0
-    discharge = 26
+    discharge = 3
 
     def __init__(self):
         print("--------------------------------------VERSION: 0.9")
