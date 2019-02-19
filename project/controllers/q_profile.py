@@ -3,7 +3,7 @@ import numpy as np
 
 
 class QProfile:
-    center = 2.92  # SHOULD be calculated
+    center = 3.02  # SHOULD be calculated
 
     def calculate_q_profile(self, data, data_public, inv_radius, collapse_duration_time):
         """ -----------------------------------------
@@ -82,7 +82,8 @@ class QProfile:
 
         return temperature_matrix_norm
 
-    def temperature_interpolation(self, inter_position, channel_position, temperature):
+    @staticmethod
+    def temperature_interpolation(inter_position, channel_position, temperature):
 
         channel_position = [np.power(v, 2) for v in channel_position]
         diff = [v-inter_position for v in channel_position]
@@ -183,7 +184,11 @@ class QProfile:
 
     def integrate_eiler(self, xs, xs_index_order, channel_position, temperature_pre_post, inv_radius):
 
-        n_steps = 1000
+        # xs = xs - np.power(self.center, 2)
+        # channel_position = [v-self.center for v in channel_position]
+        # self.center = 0
+
+        n_steps = 10
         integration_boundaries = np.linspace(xs, np.power(self.center, 2), n_steps)
 
         y = 0
