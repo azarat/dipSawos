@@ -26,7 +26,7 @@ class ViewData:
     internal_shots = 0
     internal_psi_r = 0
     internal_q_database = 0
-    internal_input_parameters = 0
+    internal_input_parametersa = 0
 
     q_profile = q_profile.QProfile()
     processing = dt.PreProfiling()
@@ -45,16 +45,20 @@ class ViewData:
         print("--------------------------------------VERSION: 0.10")
 
         self.input_parameters = self.read_input_parameters()
-        median_filter_window_size = (self.input_parameters['median_filter_window_size'],
-                                     self.input_parameters['median_filter_window_size'])
+        median_filter_window_size = (self.input_parameters['advanced']['median_filter_window_size'],
+                                     self.input_parameters['advanced']['median_filter_window_size'])
 
-        if self.close_plots == 0:
-            """ Single dis. Offset for DB numbering """
-            dis_end = self.input_parameters['discharges']['start']
-            dis_start = dis_end - 1
-        else:
-            """ Range of dis """
-            dis_start, dis_end = 0, 10
+        # if self.close_plots == 0:
+        #     """ Single dis. Offset for DB numbering """
+        #     dis_end = self.input_parameters['required']['crashes']['start']
+        #     dis_start = dis_end - 1
+        # else:
+        #     """ Range of dis """
+        #     dis_start = self.input_parameters['required']['crashes']['start']
+        #     dis_end = self.input_parameters['required']['crashes']['end'] + 1
+
+        dis_start = self.input_parameters['required']['crashes']['start'] - 1
+        dis_end = self.input_parameters['required']['crashes']['end']
 
         """ Outside loop """
         results = []
@@ -66,13 +70,13 @@ class ViewData:
 
         for dis in range(dis_start, dis_end):
 
-            print("------Load public data------DISCHARGE: ", self.shots[dis_start])
-            data_public = self.prepare_data(database=db, source="public", dis=dis_start,
+            print("------Load public data------DISCHARGE: ", self.shots[dis])
+            data_public = self.prepare_data(database=db, source="public", dis=dis,
                                             median_filter_window_size=median_filter_window_size,
                                             window_filter_width_size=0, window_function=self.window_func)
 
             print("------Load real data------")
-            data = self.prepare_data(database=db, source="real", dis=dis_start,
+            data = self.prepare_data(database=db, source="real", dis=dis,
                                      median_filter_window_size=median_filter_window_size,
                                      window_filter_width_size=0, window_function=self.window_func)
 
@@ -104,6 +108,10 @@ class ViewData:
                 print("Inversion radius order number: " + str(inv_radius['sorted_order']))
                 print("Inversion radius position: " + str(inv_radius['position']))
 
+                print('Plotting results and save as images .PNG')
+                self.build_temperature_rmaj_series_plot(temperature_matrix, self.window_width_val_inv,
+                                                        r_maj_list, 1, discharge=dis, r_inv=inv_radius)
+
             else:
                 print("FAILED")
 
@@ -121,6 +129,13 @@ class ViewData:
                   "ms | ", collapse_duration_time[0], " ", collapse_duration_time[1], " point numbers")
             print("Time duration: ", (time_list[collapse_duration_time[1]] - time_list[collapse_duration_time[0]]) * 1000,
                   " ms")
+
+            print('------Plotting results and save as images .PNG------')
+            self.build_temperature_rmaj_single_plot(
+                temperature_matrix,
+                time_list,
+                1, median_filter_window_size[0],
+                time_limits=collapse_duration_time, discharge=dis, inv_radius_channel=inv_radius_channel)
 
             print("--------------------")
 
@@ -165,7 +180,7 @@ class ViewData:
             # # # # # # # # # # # # # # # # # # # # # # # #
             # # # # # # # # # # # # # # # # # # # # # # # #
 
-            result = [self.shots[dis_start],
+            result = [self.shots[dis],
                       time_list[collapse_duration_time[0]],
                       time_list[collapse_duration_time[1]],
                       (time_list[collapse_duration_time[1]] - time_list[collapse_duration_time[0]]) * 1000,
@@ -260,8 +275,8 @@ class ViewData:
             # exit()
 
             """
-            Filtering T(t), i.e., smoothing 
-            WARNING: much info losses 
+            Filtering T(t), i.e., smoothing
+            WARNING: much info losses
             """
             # if window_filter_width_size > 0:
             #     print('Smoothing channels along timeline')
@@ -380,8 +395,8 @@ class ViewData:
             # # # # # # # # # # # # # # # # # # # # # # # #
 
             """
-            Filtering T(t), i.e., smoothing 
-            WARNING: do not smooth due to info losses in 3d 
+            Filtering T(t), i.e., smoothing
+            WARNING: do not smooth due to info losses in 3d
             """
             print('Smoothing channels along timeline - SKIP')
             # temperature_list_original = self.processing.filter(
@@ -482,8 +497,8 @@ class ViewData:
             # # # # # # # # # # # # # # # # # # # # # # # #
 
             """
-            Filtering T(t), i.e., smoothing 
-            WARNING: do not smooth due to info losses in 3d 
+            Filtering T(t), i.e., smoothing
+            WARNING: do not smooth due to info losses in 3d
             """
             print('Smoothing channels along timeline SKIP')
             # temperature_list_original = self.processing.filter(
@@ -523,7 +538,7 @@ class ViewData:
                                                                window_width=6, std_low_limit=0.01,
                                                                channel_offset=15)
 
-            """ 
+            """
             Smooth T(r_maj)
             IMPORTANT to remove sawtooth behavior T(r_maj)
             """
@@ -641,8 +656,8 @@ class ViewData:
             # # # # # # # # # # # # # # # # # # # # # # # #
 
             """
-            Filtering T(t), i.e., smoothing 
-            WARNING: do not smooth due to info losses in 3d 
+            Filtering T(t), i.e., smoothing
+            WARNING: do not smooth due to info losses in 3d
             """
             print('Smoothing channels along timeline')
             temperature_list_original = self.processing.filter(
@@ -755,9 +770,8 @@ class ViewData:
 
         return 1
 
-    @staticmethod
-    def build_temperature_rmaj_single_plot(temperature, window_width, time_list, highlight_r_inv,
-                                           start_offset, median_filter, **kwargs):
+    def build_temperature_rmaj_single_plot(self, temperature, time_list, highlight_r_inv,
+                                           start_offset, **kwargs):
         """ -----------------------------------------
             version: 0.3
             :param temperature: 2d array of filtered and calibrated temperature (list of nums)
@@ -787,8 +801,8 @@ class ViewData:
         for t_list_index, t_list in enumerate(temperature):
             if t_list_index % 4 == 0:
                 axes.plot(
-                    time_list[start_offset:-start_offset],
-                    t_list[start_offset:-start_offset],
+                    time_list[:len(t_list)],
+                    t_list,
                     color="b"
                 )
 
@@ -809,8 +823,9 @@ class ViewData:
                                                      time_list[kwargs['time_limits'][0]]) * 1000) if kwargs['time_limits'] != 0 else 0
 
         axes.set(xlabel='Time (seconds)', ylabel='T (a.u.)',
-                 title='Channels series, '
-                       + 'wind. width ' + str(window_width) +
+                 title='Channels series, Discharge '
+                        + str(self.shots[kwargs['discharge']]) +
+                        str(', Crash ') + str(kwargs['discharge'] + 1) +
                         '\nCollapse duration = ' + str(collapse_duration_txt) + "ms")
 
 
@@ -821,23 +836,21 @@ class ViewData:
         axes.grid()
 
         directories = [
-            'results/v06/dis' + str(kwargs['discharge'] + 1) + '/',
-            'results/v06/T_time/'
+            'results/T_time/'
         ]
 
         for directory in directories:
             if not os.path.exists(directory):
                 os.makedirs(directory)
 
-            fig.savefig(directory + 'dis' + str(kwargs['discharge'] + 1) +
-                        '_T_time_series_w' + str(window_width) +
-                        '_median' + str(median_filter) + '_highlight' + str(highlight_r_inv) +
+            fig.savefig(directory + 'dis' + str(self.shots[kwargs['discharge']]) +
+                        '_crash' + str(kwargs['discharge'] + 1) +
+                        '_highlight' + str(highlight_r_inv) +
                         '.png')
 
         return 1
 
-    @staticmethod
-    def build_temperature_rmaj_series_plot(temperature_list, window_width, r_maj, highlight_r_inv, **kwargs):
+    def build_temperature_rmaj_series_plot(self, temperature_list, window_width, r_maj, highlight_r_inv, **kwargs):
         """ -----------------------------------------
             version: 0.3
             :param temperature_list: 2d list of num
@@ -864,8 +877,8 @@ class ViewData:
 
         label_limit = len(temperature_list)
         for time, temperature in enumerate(np.transpose(temperature_list)):
-            """ 
-            Labeling each channel (in ordered range) 
+            """
+            Labeling each channel (in ordered range)
             for T(R_maj) plot on the very beginning instant
             """
             if time == 0:
@@ -896,8 +909,8 @@ class ViewData:
                 # # ax2.set_xticklabels(order_ticks)
 
                 if highlight_r_inv == 1 and kwargs['r_inv']['index'] != 0:
-                    rect = patches.Rectangle((kwargs['r_inv']['value_neighbors'][0], min(map(min, temperature_list_buffer))),
-                                             (kwargs['r_inv']['value_neighbors'][1] - kwargs['r_inv']['value_neighbors'][0]),
+                    rect = patches.Rectangle((kwargs['r_inv']['position_neighbors'][0], min(map(min, temperature_list_buffer))),
+                                             (kwargs['r_inv']['position_neighbors'][1] - kwargs['r_inv']['position_neighbors'][0]),
                                              max(map(max, temperature_list_buffer)) - min(map(min, temperature_list_buffer)),
                                              linewidth=3, edgecolor='r', facecolor='r', alpha=0.2)
                     axes.add_patch(rect)
@@ -913,23 +926,24 @@ class ViewData:
 
         # axes.set_xlim(min(r_maj), max(r_maj))
         axes.set(ylabel='T (a.u.)', xlabel='R (m)',
-                 title='R_inv: channel = ' + str(kwargs['r_inv']['channel']) +
-                       ', value = ' + str(kwargs['r_inv']['value']) + 'm')
+                 title= 'Discharge '
+                        + str(self.shots[kwargs['discharge']]) +
+                        str(', Crash ') + str(kwargs['discharge'] + 1) +
+                       '\nR_inv: channel = ' + str(kwargs['r_inv']['index']) +
+                       ', position = ' + str(kwargs['r_inv']['position']) + 'm')
 
         for item in ([axes.title, axes.xaxis.label, axes.yaxis.label] +
                      axes.get_xticklabels() + axes.get_yticklabels()):
             item.set_fontsize(17)
 
-        method = ("_" + str(kwargs['method'])) if 'method' in kwargs else ''
-
-        directory = 'results/v06/dis' + str(kwargs['discharge'] + 1) + '/'
+        directory = 'results/T_Rmaj/'
 
         if not os.path.exists(directory):
             os.makedirs(directory)
 
-        fig.savefig(directory + 'dis' + str(kwargs['discharge'] + 1) +
-                    '_T_Rmaj_series_w' + str(window_width) +
-                    str(method) +
+        fig.savefig(directory + 'dis' + str(self.shots[kwargs['discharge']]) +
+                    '_crash' + str(kwargs['discharge'] + 1) +
+                    '_T_Rmaj_series' +
                     '.png')
 
         return 1
@@ -965,4 +979,3 @@ class ViewData:
     @input_parameters.setter
     def input_parameters(self, value):
         self.internal_input_parameters = value
-
