@@ -1,4 +1,4 @@
-##HOW TO RUN PROGRAM
+## HOW TO RUN THE PROGRAM
 
 1. Move to the folder with file **_run.py_** via Terminal, i.e.:
 
@@ -27,7 +27,12 @@ module load python
 
 These commands will switch active version of python to the latest one.
 
-##OUTPUT
+## OUTPUT
+
+Output variables:
+
+1. Inversion radius of crash
+2. Crash duration
 
 JETSTA return results in several ways:
 
@@ -35,14 +40,14 @@ JETSTA return results in several ways:
 2. Exprort all results into file **_results/output.csv_**, which is excel-like file.
 3. Create images in **_results_** folder to clarify results.
 
-##ABOUT PARAMETERS
-###SETTING PARAMETERS
+## ABOUT PARAMETERS
+### SETTING PARAMETERS
 
 In the same directory where **_run.py_** is placed, you can find file **_input.json_**
 
-That file can be opened with any text editor. Inside are placed structured list of parameters which should be filled.
+That file can be opened with any text editor. Inside is placed structured list of parameters which should be filled.
 
-####REQUIRED PARAMETERS
+#### REQUIRED PARAMETERS
 
 Obligatory parameters are "_Crash Start_" and "_Crash End_".
 
@@ -52,8 +57,9 @@ If "_Crash Start_" and "_Crash End_" are different, i.e. 1 and 10, the program w
 
 If "_Crash Start_" and "_Crash End_" are the same number, _i.e. 1 and 1_, the program will analyse only crash number 1.
 
-####ADVANCED PARAMETERS
+#### ADVANCED PARAMETERS
 
-##CONTACT
+## CONTACT
 On any question regarding JETSTA, please contact Andrii Tishchenko, tishchenko.andrii@gmail.com
+
 GitHub: https://github.com/azarat/jetsta/tree/1.0
