@@ -22,9 +22,26 @@ class LoadDB:
     internal_temperature = 0
     internal_channels = 0
     internal_channels_model = 0
+    internal_psi_r = 0
+    internal_q_database = 0
 
-    def __init__(self, discharge, source):
+    def load(self):
+        """ -----------------------------------------
+             version: 0.10
+             desc: load data from matlab
+         ----------------------------------------- """
         sawdata = loadmat('saw_data.mat')
+        self.shots = sawdata['saw_data'][0, 0]['SHOT'].ravel()
+
+        return sawdata
+
+    def assign(self, db, discharge, source):
+        """ -----------------------------------------
+             version: 0.10
+             desc: assign certain discharge data from preloaded DB
+         ----------------------------------------- """
+
+        sawdata = db
 
         data_type = 'KK3PPF' if source == 'public' else 'KK3JPF'
 
@@ -51,7 +68,16 @@ class LoadDB:
 
         self.time = sawdata['saw_data'][0, 0][data_type][0, 0]['TIM01'][0, discharge].ravel()
         self.temperature = temperature_temp
-        self.shots = sawdata['saw_data'][0, 0]['SHOT'].ravel()
+        self.psi_r = sawdata['saw_data'][0, 0]['PSIPROFILE'][0, 0]['R'][0][discharge].ravel()
+        self.q_database = sawdata['saw_data'][0, 0]['QPROFILE'][0, 0]['QPRE'][0, discharge].ravel()
+
+    @property
+    def q_database(self):
+        return self.internal_q_database
+
+    @q_database.setter
+    def q_database(self, value):
+        self.internal_q_database = value
 
     @property
     def channels(self):
@@ -60,6 +86,14 @@ class LoadDB:
     @channels.setter
     def channels(self, value):
         self.internal_channels = value
+
+    @property
+    def psi_r(self):
+        return self.internal_psi_r
+
+    @psi_r.setter
+    def psi_r(self, value):
+        self.internal_psi_r = value
 
     @property
     def channels_model(self):

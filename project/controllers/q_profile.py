@@ -1,11 +1,15 @@
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy import signal as signal_processor
 
 
 class QProfile:
     center = 3.02  # SHOULD be calculated
 
-    def calculate_q_profile(self, data, data_public, inv_radius, collapse_duration_time):
+    internal_channel_index = 0
+    internal_channel_position = 0
+
+    def get_x_mix(self, data, data_public, inv_radius, collapse_duration_time):
         """ -----------------------------------------
             version: 0.9
             desc: 
@@ -17,9 +21,17 @@ class QProfile:
         temperature_matrix = np.asarray([channel[2] for channel in data])
         temperature_matrix_public = data_public
 
-        xc_index_order = self.nearest_channel_index(self.center, channel_position, channel_index)
-        xc_index = xc_index_order['index']
+        self.channel_index = channel_index
+        self.channel_position = channel_position
 
+        # channel_position_o = channel_position
+        channel_position = [v-self.center for v in channel_position]
+        channel_position = [((np.power(v, 2)) * (v / np.abs(v))) for v in channel_position]
+
+        xc_index_order = self.nearest_channel_index(0, channel_position, channel_index)
+
+        """ !OUTDATED! """
+        xc_index = xc_index_order['index']
         # xs = self.find_xs(temperature_matrix_public, temperature_matrix, channel_position, channel_index, xc_index, inv_radius, collapse_duration_time[1])
         # xs = np.power((np.sqrt(xs) + self.center), 2)
         # xs_index_order = self.nearest_channel_index(np.sqrt(xs), channel_position, channel_index)
@@ -28,28 +40,60 @@ class QProfile:
         temperature_matrix = self.normalization_ppf(temperature_matrix, temperature_matrix_public, channel_index)
 
         temperature_pre_post = {
-            'pre': np.transpose(temperature_matrix)[500],
-            'post': np.transpose(temperature_matrix)[-500]
+            'pre': np.transpose(temperature_matrix)[collapse_duration_time[0]],
+            'post': np.transpose(temperature_matrix)[collapse_duration_time[1]]
         }
 
+        """ Median det. killer (median filtration) """
+        temperature_pre_post['pre'] = signal_processor.medfilt(temperature_pre_post['pre'], 31)
+        temperature_pre_post['post'] = signal_processor.medfilt(temperature_pre_post['post'], 31)
+
+        """ Kill detalization (window filtration) """
+        # window = signal_processor.get_window('triang', 10)
+        # temperature_pre_post['pre'] = signal_processor.convolve(temperature_pre_post['pre'], window, mode='valid')
+        # temperature_pre_post['post'] = signal_processor.convolve(temperature_pre_post['post'], window, mode='valid')
+
+        """ DEBUG """
+        # plt.close('all')
+        # fig, ax = plt.subplots(1, 1)
+        # fig.set_size_inches(15, 7)
+        # ax.plot(channel_position, temperature_pre_post['pre'], label="pre")
+        # ax.plot(channel_position, temperature_pre_post['post'], label="post")
+        # plt.axvline(x=float(np.power(float(inv_radius['position']) - self.center, 2)), label="Inv rad", color="black")
+        # plt.legend()
+        #
+        # fig, ax = plt.subplots(1, 1)
+        # fig.set_size_inches(15, 7)
+        # ax.plot(channel_position_o, temperature_pre_post['pre'], label="pre")
+        # ax.plot(channel_position_o, temperature_pre_post['post'], label="post")
+        # plt.axvline(x=float(inv_radius['position']), label="Inv rad", color="black")
+        # plt.legend()
+        #
+        # plt.show()
+        # exit()
+
         xs = self.find_xs_ppf(temperature_pre_post, channel_position)
-        xs_index_order = self.nearest_channel_index(np.sqrt(xs), channel_position, channel_index)
+        xs_index_order = self.nearest_channel_index(xs, channel_position, channel_index)
 
-        dependency = self.integrate_eiler(xs, xs_index_order, channel_position, temperature_pre_post, inv_radius)
+        x_2 = self.integrate_eiler(xs, xs_index_order, channel_position, temperature_pre_post, inv_radius)
 
-        return 1
+        x_mix = x_2[-1]
+        r_mix = np.sqrt(x_mix) + self.center
+
+        return r_mix
 
     def find_xs_ppf(self, temperature_pre_post, channel_position):
-        temperature_xc = self.temperature_interpolation(np.power(self.center, 2), channel_position, temperature_pre_post['post'])
 
-        diff = [temperature_xc - v for v in temperature_pre_post['pre']]
+        temperature_xc = self.temperature_interpolation(0, channel_position, temperature_pre_post['post'])
+
+        diff = [temperature_xc - v for v in reversed(temperature_pre_post['pre'])]
 
         channel_before = 0
         channel_after = 0
         for i, v in enumerate(diff):
-            if v >= 0:
-                channel_after = i
-                channel_before = i-1
+            if v <= 0:
+                channel_after = len(diff) - i
+                channel_before = len(diff) - i - 1
                 break
 
         position_gap = np.linspace(channel_position[channel_before], channel_position[channel_after], 100)
@@ -58,6 +102,7 @@ class QProfile:
         diff_gap = [temperature_xc-v for v in temperature_gap]
 
         point_cs = 0
+
         for i, v in enumerate(diff_gap):
             if v >= 0:
                 point_cs = i
@@ -65,8 +110,7 @@ class QProfile:
 
         position_cs = position_gap[point_cs]
 
-        return np.power(position_cs, 2)
-
+        return position_cs
 
     @staticmethod
     def normalization_ppf(temperature_matrix, temperature_matrix_public, channel_index):
@@ -85,7 +129,7 @@ class QProfile:
     @staticmethod
     def temperature_interpolation(inter_position, channel_position, temperature):
 
-        channel_position = [np.power(v, 2) for v in channel_position]
+        # channel_position = [np.power(v, 2) for v in channel_position]
         diff = [v-inter_position for v in channel_position]
 
         channel_after = 0
@@ -125,6 +169,7 @@ class QProfile:
 
     def find_xs(self, temperature_matrix_public, temperature_matrix, channel_position, channel_index, xc_index, inv_radius, crash_end):
         """ -----------------------------------------
+            !OUDATED!
             version: 0.9
             desc: t => temperature
                   x = r^2
@@ -184,16 +229,11 @@ class QProfile:
 
     def integrate_eiler(self, xs, xs_index_order, channel_position, temperature_pre_post, inv_radius):
 
-        # xs = xs - np.power(self.center, 2)
-        # channel_position = [v-self.center for v in channel_position]
-        # self.center = 0
-
-        n_steps = 10
-        integration_boundaries = np.linspace(xs, np.power(self.center, 2), n_steps)
+        n_steps = 100
+        integration_boundaries = np.linspace(xs, 0, n_steps)
 
         y = 0
         h = 0
-        x_rate = 0
         temperature_1 = 0
         temperature_2 = 0
         temperature_plus = 0
@@ -204,10 +244,9 @@ class QProfile:
         T_2 = []
         T_plus = []
         x_plus = []
-        dependency = []
+        h_array = []
+        x_2 = []
         for i, inter_position in enumerate(integration_boundaries):
-
-            x_rate = i
 
             if i == 0:
                 y = xs
@@ -217,59 +256,96 @@ class QProfile:
                 h = (inter_position - integration_boundaries[i-1])
                 y = y + h * function_value
 
-                temperature_1 = self.temperature_interpolation(integration_boundaries[i], channel_position, temperature_pre_post['pre'])
+                temperature_1 = self.temperature_interpolation(inter_position, channel_position, temperature_pre_post['pre'])
                 temperature_2 = self.temperature_interpolation(y, channel_position, temperature_pre_post['pre'])
-                temperature_plus = self.temperature_interpolation((y - integration_boundaries[i] + np.power(self.center, 2)), channel_position, temperature_pre_post['post'])
+                temperature_plus = self.temperature_interpolation((y - inter_position), channel_position, temperature_pre_post['post'])
                 function_value = self.integration_function(temperature_plus, temperature_1, temperature_2)
 
-            if np.isnan(inter_position) or np.isnan(y - integration_boundaries[i] + np.power(self.center, 2)) \
-                    or np.isnan(y) or np.isnan(temperature_1) or np.isnan(temperature_2) or np.isnan(temperature_plus) \
-                    or y < 0 or function_value >= 0:
+            if np.isnan(inter_position) or np.isnan(y - inter_position) \
+                    or np.isnan(y) or np.isnan(temperature_1) or np.isnan(temperature_2) or np.isnan(temperature_plus):
                 break
 
-            dependency.append(y)
-            x_plus.append((y - integration_boundaries[i] + np.power(self.center, 2)))
-            x_1.append(integration_boundaries[i])
+            h_array.append(h)
+            x_2.append(y)
+            x_plus.append(y - inter_position)
+            x_1.append(inter_position)
             f.append(function_value)
             T_1.append(temperature_1)
             T_2.append(temperature_2)
             T_plus.append(temperature_plus)
 
+            """ DEBUG """
             print("-------------------------STEP ", i)
-            print("x1 = ", integration_boundaries[i], " --- y = ", y, " --- x+ = ", (y - integration_boundaries[i] + np.power(self.center, 2)))
+            print("x1 = ", inter_position, " --- xs = ", xs, " --- y = ", y, " --- x+ = ", (y - inter_position))
             print("-------------------------")
             print("T1 = ", temperature_1, " --- T2 = ", temperature_2, " --- T+ = ", temperature_plus)
             print("-------------------------")
             print("f = ", function_value)
             print("-------------------------")
 
-        plt.close("all")
-        x_rate = integration_boundaries[:x_rate]
-        temperature_xc = self.temperature_interpolation(np.power(self.center, 2), channel_position,
-                                                        temperature_pre_post['post'])
-        channel_position = [np.power(v, 2) for v in channel_position]
-        fig, ax = plt.subplots(1, 1)
-        fig.set_size_inches(15, 7)
-        ax.plot(channel_position, temperature_pre_post['post'])
-        ax.plot(channel_position, temperature_pre_post['pre'])
-        plt.axvline(x=float(np.power(self.center, 2)), label="Xc", color="black")
-        plt.axvline(x=float(xs), label="Xs", color="yellow")
-        plt.axvline(x=float(x_1[-1]), label="X1", color="green")
-        plt.axvline(x=float(dependency[-1]), label="X2/y", color="red")
-        plt.axvline(x=float(x_plus[-1]), label="X+", color="blue")
-        plt.axhline(y=float(temperature_xc), label="Tc")
-        plt.axvline(x=np.power(float(inv_radius['position']), 2), label="r inv")
-        plt.legend()
+        return x_2
 
-        fig, ax = plt.subplots(1, 1)
-        fig.set_size_inches(15, 7)
-        ax.plot(x_rate, dependency, label="X2(X1)")
-        plt.axvline(x=float(xs), label="Xs", color="yellow")
-        plt.axhline(y=float(xs), label="Xs", color="yellow")
-        plt.axvline(x=float(np.power(self.center, 2)), label="Xc", color="black")
-        plt.legend()
+    def get_psi_rmix(self, psi_r, r_mix):
+        """ -----------------------------------------
+             version: 0.10
+             desc: find value psi_r in a point r_mix
+                   psi_r ~ r^2
+         ----------------------------------------- """
 
-        plt.show()
-        exit()
+        diff_r = self.channel_position - r_mix
 
-        return dependency
+        left_channel_order = 0
+        right_channel_order = 0
+        for i, d in enumerate(diff_r):
+            if d > 0:
+                left_channel_order = i-1
+                right_channel_order = i
+                break
+
+        """ Find interposition via triangular equations """
+        """ Katet """
+        b = self.channel_position[right_channel_order] - self.channel_position[left_channel_order]
+        """ Part of the same katet """
+        b1 = r_mix - self.channel_position[left_channel_order]
+        """ Another katet """
+
+        """ DEBUG """
+        # plt.close('all')
+        # fig, ax = plt.subplots(1, 1)
+        # fig.set_size_inches(15, 7)
+        # ax.plot(psi_r)
+        #
+        # plt.show()
+        # exit()
+
+
+        a = psi_r[right_channel_order] - psi_r[left_channel_order]
+        """ Hypotenuza """
+        c = np.sqrt(np.power(a, 2) + np.power(b, 2))
+        """ Triangular part of psi we looking for """
+        a1 = b1 * b / c
+
+        psi_rmix = 0
+        if psi_r[left_channel_order] < psi_r[right_channel_order]:
+            psi_rmix = psi_r[left_channel_order] + a1
+        else:
+            psi_rmix = psi_r[left_channel_order] - a1
+
+
+        return psi_rmix
+
+    @property
+    def channel_index(self):
+        return self.internal_channel_index
+
+    @channel_index.setter
+    def channel_index(self, value):
+        self.internal_channel_index = value
+
+    @property
+    def channel_position(self):
+        return self.internal_channel_position
+
+    @channel_position.setter
+    def channel_position(self, value):
+        self.internal_channel_position = value

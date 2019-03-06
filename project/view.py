@@ -15,12 +15,19 @@ from matplotlib import cm, rc
 from matplotlib.ticker import LinearLocator, FormatStrFormatter
 
 import csv
+import json
+# from pprint import pprint
 
 import scipy.io as io
 import time
 
 
 class ViewData:
+    internal_shots = 0
+    internal_psi_r = 0
+    internal_q_database = 0
+    internal_input_parameters = 0
+
     q_profile = q_profile.QProfile()
     processing = dt.PreProfiling()
     channel_from = 0
@@ -31,111 +38,166 @@ class ViewData:
     window_func = 'triang'
     boundary = (0.75, 1.5)
 
-    close_plots = 0
-    discharge = 14
+    close_plots = 1
+    discharge = 3
 
     def __init__(self):
-        print("--------------------------------------VERSION: 0.9")
+        print("--------------------------------------VERSION: 0.10")
+
+        self.input_parameters = self.read_input_parameters()
+        median_filter_window_size = (self.input_parameters['median_filter_window_size'],
+                                     self.input_parameters['median_filter_window_size'])
 
         if self.close_plots == 0:
-            # Single dis, offset for DB numbering
-            dis_end = self.discharge
+            """ Single dis. Offset for DB numbering """
+            dis_end = self.input_parameters['discharges']['start']
             dis_start = dis_end - 1
         else:
-            # Range of dis
-            dis_start, dis_end = 0, 100
+            """ Range of dis """
+            dis_start, dis_end = 0, 10
 
-        """ Q profile """
-        print("------Load public data------")
-        data_public = self.prepare_data(source="public", dis=dis_start, median_filter_window_size=(9, 9),
-                                        window_filter_width_size=0, window_function=self.window_func)
+        """ Outside loop """
+        results = []
+        db_controller = dt.Controller()
+        db = db_controller.load()
 
-        print("------Load real data------")
-        data = self.prepare_data(source="real", dis=dis_start, median_filter_window_size=(9, 9),
-                                 window_filter_width_size=0, window_function=self.window_func)
+        if type(self.shots) is int:
+            self.shots = db_controller.shots
 
-        """ 60 - due to the low accuracy after r_inv, which have influence on r_inv detection """
-        print("------Inversion radius detection------")
-        temperature_matrix = np.asarray([channel[2] for channel in data])[:80, 9: -9]
+        for dis in range(dis_start, dis_end):
 
-        print('Smoothing channels along timeline')
-        temperature_matrix_smooth = self.processing.filter(
-            temperature_matrix, self.window_width_val_inv, self.window_func)
+            print("------Load public data------DISCHARGE: ", self.shots[dis_start])
+            data_public = self.prepare_data(database=db, source="public", dis=dis_start,
+                                            median_filter_window_size=median_filter_window_size,
+                                            window_filter_width_size=0, window_function=self.window_func)
 
-        print('R_inv detecting')
-        r_maj_list = np.asarray([channel[1] for channel in data])[:len(temperature_matrix_smooth)]
-        inv_radius_channel = dt.FindInvRadius().inv_radius(temperature_list=temperature_matrix_smooth,
-                                                           window_width=6, std_low_limit=0.01,
-                                                           channel_offset=15)
+            print("------Load real data------")
+            data = self.prepare_data(database=db, source="real", dis=dis_start,
+                                     median_filter_window_size=median_filter_window_size,
+                                     window_filter_width_size=0, window_function=self.window_func)
 
-        inv_radius = 0
-        if inv_radius_channel > 0:
-            inv_radius = {
-                'index': np.asarray([channel[0] for channel in data])[inv_radius_channel],
-                'sorted_order': inv_radius_channel,
-                'position': '{:.4f}'.format(r_maj_list[inv_radius_channel]),
-                'position_neighbors': (r_maj_list[inv_radius_channel - 1], r_maj_list[inv_radius_channel + 1])
-            }
+            """ 60 - due to the low accuracy after r_inv, which have influence on r_inv detection """
+            print("------Inversion radius detection------")
+            temperature_matrix = np.asarray([channel[2] for channel in data])[:80, 9: -9]
 
-            print(' ')
-            print("Inversion radius index: " + str(inv_radius['index']))
-            print("Inversion radius order number: " + str(inv_radius['sorted_order']))
-            print("Inversion radius position: " + str(inv_radius['position']))
+            print('Smoothing channels along timeline')
+            temperature_matrix_smooth = self.processing.filter(
+                temperature_matrix, self.window_width_val_inv, self.window_func)
 
-        else:
-            print("FAILED")
+            print('R_inv detecting')
+            r_maj_list = np.asarray([channel[1] for channel in data])[:len(temperature_matrix_smooth)]
+            inv_radius_channel = dt.FindInvRadius().inv_radius(temperature_list=temperature_matrix_smooth,
+                                                               window_width=6, std_low_limit=0.01,
+                                                               channel_offset=15)
 
-        """ Identifying collapse duration """
-        print("------Identifying collapse duration------")
-        collapse_duration_time = dt.FindCollapseDuration().collapse_duration([],
-                                                                             temperature_matrix, 6,
-                                                                             inv_radius_channel, 1.03,
-                                                                             (9, 9))
+            inv_radius = 0
+            if inv_radius_channel > 0:
+                inv_radius = {
+                    'index': np.asarray([channel[0] for channel in data])[inv_radius_channel],
+                    'sorted_order': inv_radius_channel,
+                    'position': '{:.4f}'.format(r_maj_list[inv_radius_channel]),
+                    'position_neighbors': (r_maj_list[inv_radius_channel - 1], r_maj_list[inv_radius_channel + 1])
+                }
 
-        time_list = data[0][3]
+                print(' ')
+                print("Inversion radius index: " + str(inv_radius['index']))
+                print("Inversion radius order number: " + str(inv_radius['sorted_order']))
+                print("Inversion radius position: " + str(inv_radius['position']))
 
-        collapse_duration_time = [int(x) for x in collapse_duration_time]
-        print("Time segment: ", time_list[collapse_duration_time[0]], " ", time_list[collapse_duration_time[1]],
-              "ms | ", collapse_duration_time[0], " ", collapse_duration_time[1], " point numbers")
-        print("Time duration: ", (time_list[collapse_duration_time[1]] - time_list[collapse_duration_time[0]]) * 1000,
-              " ms")
+            else:
+                print("FAILED")
 
-        print("--------------------")
+            """ Identifying collapse duration """
+            print("------Identifying collapse duration------")
+            collapse_duration_time = dt.FindCollapseDuration().collapse_duration([],
+                                                                                 temperature_matrix, 6,
+                                                                                 inv_radius_channel, 1.03,
+                                                                                 median_filter_window_size)
 
-        if collapse_duration_time[0] == 0 or \
-                collapse_duration_time[1] == len(temperature_matrix) or \
-                len(temperature_matrix) == 0:
-            print("FAILED")
+            time_list = data[0][3]
 
-        self.q_profile.calculate_q_profile(data, data_public, inv_radius, collapse_duration_time)
+            collapse_duration_time = [int(x) for x in collapse_duration_time]
+            print("Time segment: ", time_list[collapse_duration_time[0]], " ", time_list[collapse_duration_time[1]],
+                  "ms | ", collapse_duration_time[0], " ", collapse_duration_time[1], " point numbers")
+            print("Time duration: ", (time_list[collapse_duration_time[1]] - time_list[collapse_duration_time[0]]) * 1000,
+                  " ms")
 
-        # # # # # # # # # # # # # # # # # # # # # # # #
+            print("--------------------")
 
-        """ Inversion radius """
-        # self.build_plots_to_find_inversion_radius(start=dis_start, end=dis_end, median_filter_window_size=(3, 3),
-        #                                           highlight_r_inv=1, start_offset=1, close_plots=self.close_plots)
-        # # # # # # # # # # # # # # # # # # # # # # # #
+            if collapse_duration_time[0] == 0 or \
+                    collapse_duration_time[1] == len(temperature_matrix) or \
+                    len(temperature_matrix) == 0:
+                print("FAILED")
 
-        """ Collapse duration """
-        results = False
-        # results = self.build_plots_to_find_collapse_time_duration(start=dis_start, end=dis_end,
-        #                                                           median_filter_window_size=(9, 9),
-        #                                                           highlight_r_inv=1, close_plots=self.close_plots)
-        # # # # # # # # # # # # # # # # # # # # # # # #
-        """ Colormap overview """
-        # self.build_plots_colormap(start=dis_start, end=dis_end, median_filter_window_size=(3, 3),
-        #                           start_offset=4, end_offset=-30, close_plots=self.close_plots)
-        # # # # # # # # # # # # # # # # # # # # # # # #
+            """ !IN DEV! """
+            """ Q profile """
+            # r_mix = self.q_profile.get_x_mix(data, data_public, inv_radius, collapse_duration_time)
+            # psi_rmix = self.q_profile.get_psi_rmix(self.psi_r, r_mix)
+            #
+            # """ DEBUG """
+            # plt.close('all')
+            # fig, ax = plt.subplots(1, 1)
+            # fig.set_size_inches(15, 7)
+            # for q in self.q_database:
+            #     ax.plot(q)
+            #
+            # plt.show()
+            # exit()
 
-        # # # # # # # # # # # # # # # # # # # # # # # #
+            # # # # # # # # # # # # # # # # # # # # # # # #
+            """ !OLD VER! """
+            """ Inversion radius """
+            # self.build_plots_to_find_inversion_radius(start=dis_start, end=dis_end, median_filter_window_size=(3, 3),
+            #                                           highlight_r_inv=1, start_offset=1, close_plots=self.close_plots)
+            # # # # # # # # # # # # # # # # # # # # # # # #
+
+            """ !OLD VER! """
+            """ Collapse duration """
+            # results = False
+            # results = self.build_plots_to_find_collapse_time_duration(start=dis_start, end=dis_end,
+            #                                                           median_filter_window_size=(9, 9),
+            #                                                           highlight_r_inv=1, close_plots=self.close_plots)
+            # # # # # # # # # # # # # # # # # # # # # # # #
+            """ !OLD VER! """
+            """ Colormap overview """
+            # self.build_plots_colormap(start=dis_start, end=dis_end, median_filter_window_size=(3, 3),
+            #                           start_offset=4, end_offset=-30, close_plots=self.close_plots)
+            # # # # # # # # # # # # # # # # # # # # # # # #
+            # # # # # # # # # # # # # # # # # # # # # # # #
+
+            result = [self.shots[dis_start],
+                      time_list[collapse_duration_time[0]],
+                      time_list[collapse_duration_time[1]],
+                      (time_list[collapse_duration_time[1]] - time_list[collapse_duration_time[0]]) * 1000,
+                      inv_radius['index'],
+                      inv_radius['position']]
+
+            results.append(result)
+
+            print("--------------------------------------COMPLETE")
+            print("")
+
         if self.close_plots == 0:
             plt.show()
         else:
-            if results:
-                self.write_into_file(results)
+            self.write_into_file(results)
         # # # # # # # # # # # # # # # # # # # # # # # #
 
-    def prepare_data(self, source, dis, median_filter_window_size, window_filter_width_size, window_function):
+    @staticmethod
+    def read_input_parameters():
+        """ -----------------------------------------
+            version: 0.10
+            desc: read input parameters from JSON file
+            :return [list]
+        ----------------------------------------- """
+
+        with open('input.json') as f:
+            input_parameters = json.load(f)
+
+        return input_parameters
+
+
+    def prepare_data(self, database, source, dis, median_filter_window_size, window_filter_width_size, window_function):
         """ -----------------------------------------
             version: 0.9
             desc: extract data from MatLab database, clear from channels with incomplete info,
@@ -147,7 +209,10 @@ class ViewData:
         """ Extract data from MATLAB database """
         print('Load data')
         data = dt.Profiling()
-        data.load(discharge=dis, source=source)
+        data.assign(database=database, discharge=dis, source=source)
+
+        if type(self.psi_r) is int:
+            self.psi_r = data.psi_r
 
         if source == 'public':
 
@@ -160,7 +225,7 @@ class ViewData:
             print('Remove channels with R_maj = nan')
             r_maj_list = self.processing.dict_to_list(data.channels_pos)
             temperature_matrix = data.temperature_original
-            time_list = data.time_original
+            time_list = data.time
 
             temperature_matrix_buffer = []
             chan_order_buffer = []
@@ -191,20 +256,37 @@ class ViewData:
             channel_position = [channel[1] for channel in channels_sorted]
             temperature_matrix = [temperature_matrix[channel[0]] for channel in channels_sorted]
 
+            # print(channel_number[60])
+            # exit()
+
             """
             Filtering T(t), i.e., smoothing 
             WARNING: much info losses 
             """
-            if window_filter_width_size > 0:
-                print('Smoothing channels along timeline')
-                temperature_matrix = self.processing.filter(
-                    temperature_matrix, window_filter_width_size, window_function)
+            # if window_filter_width_size > 0:
+            #     print('Smoothing channels along timeline')
+            #     temperature_matrix = self.processing.filter(
+            #         temperature_matrix, window_filter_width_size, window_function)
             # # # # # # # # # # # # # # # # # # # # # # # #
 
             """ Calibrate (Normalization on 1) """
             print('Normalizing channels on 1')
             temperature_matrix = data.normalization(temperature_matrix)
             # # # # # # # # # # # # # # # # # # # # # # # #
+
+            # fig, ax = plt.subplots(1, 1)
+            # fig.set_size_inches(15, 7)
+            #
+            # plt.title('Original data of ECE KK3 JPF, discharge 86459, channel 36', fontsize=17)
+            # plt.xlabel('Time (seconds)', fontsize=17)
+            # plt.ylabel('T', fontsize=17)
+            #
+            # ax.plot(time_list, temperature_matrix[60])
+            # # ax.plot(np.transpose(temperature_matrix)[500])
+            # # ax.plot(np.transpose(temperature_matrix)[-500])
+            #
+            # plt.show()
+            # exit()
 
             """ Median filtering. IMPORTANT to remove outliers """
             if median_filter_window_size != 0:
@@ -219,12 +301,16 @@ class ViewData:
     @staticmethod
     def write_into_file(results):
         """ -----------------------------------------
-            version: 0.7
+            version: 0.10
             desc: write results in file
             :return 1
         ----------------------------------------- """
+        directory = 'results/'
 
-        with open('results/v06.csv', 'w') as csvfile:
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+
+        with open(directory + 'output.csv', 'w') as csvfile:
             csvwriter = csv.writer(csvfile)
             csvwriter.writerow(['Discharge order', 'Discharge JET number', 'Start, ms', 'End, ms', 'Duration, ms',
                                 'Inv. radius channel', 'Inv. radius, m'])
@@ -253,7 +339,7 @@ class ViewData:
             """ Extract data from MATLAB database """
             print('Load data')
             data = dt.Profiling()
-            data.load(discharge=dis, source='real')
+            data.assign(discharge=dis, source='real')
             # data_public = dt.Profiling(discharge=55, source='public')
             # # # # # # # # # # # # # # # # # # # # # # # #
 
@@ -287,7 +373,7 @@ class ViewData:
             r_maj_list_indexes = [channel[0] for channel in sorted(chan_pos_order_buffer.items(), key=itemgetter(1))]
             r_maj_list = [channel[1] for channel in sorted(chan_pos_order_buffer.items(), key=itemgetter(1))]
             channel_order_list = {index: channel[0] for index, channel in enumerate(sorted(chan_pos_order_buffer.items(), key=itemgetter(1)))}
-            time_list = data.time_original
+            time_list = data.time
             """ Same vars in a.u. units """
             """ Ordering by R_maj """
             temperature_list_original = data.order_by_r_maj(temperature_list_original, chan_pos_order_buffer)
@@ -354,7 +440,7 @@ class ViewData:
             """ Extract data from MATLAB database """
             print('Load data')
             data = dt.Profiling()
-            data.load(discharge=dis, source='real')
+            data.assign(discharge=dis, source='real')
             # data_public = dt.Profiling(discharge=55, source='public')
             # # # # # # # # # # # # # # # # # # # # # # # #
 
@@ -389,7 +475,7 @@ class ViewData:
             r_maj_list_indexes = [channel[0] for channel in sorted(chan_pos_order_buffer.items(), key=itemgetter(1))]
             r_maj_list = [channel[1] for channel in sorted(chan_pos_order_buffer.items(), key=itemgetter(1))]
             channel_order_list = {index: channel[0] for index, channel in enumerate(sorted(chan_pos_order_buffer.items(), key=itemgetter(1)))}
-            time_list = data.time_original
+            time_list = data.time
             """ Same vars in a.u. units """
             """ Ordering by R_maj """
             temperature_list_original = data.order_by_r_maj(temperature_list_original, chan_pos_order_buffer)
@@ -427,11 +513,11 @@ class ViewData:
             # r_maj_list = r_maj_list[:len(temperature_list_rad)]
             r_maj_list = [x * x for x in r_maj_list]
 
-            fig, ax = plt.subplots(1, 1)
-            fig.set_size_inches(15, 7)
-            ax.plot(r_maj_list)
-            plt.show()
-            exit()
+            # fig, ax = plt.subplots(1, 1)
+            # fig.set_size_inches(15, 7)
+            # ax.plot(r_maj_list)
+            # plt.show()
+            # exit()
 
             inv_radius_channel = dt.FindInvRadius().inv_radius(temperature_list=temperature_list_rad,
                                                                window_width=6, std_low_limit=0.01,
@@ -514,7 +600,7 @@ class ViewData:
             """ Extract data from MATLAB database """
             print('Load data')
             data = dt.Profiling()
-            data.load(discharge=dis, source='real')
+            data.assign(discharge=dis, source='real')
             # data_public = dt.Profiling(discharge=55, source='public')
             # # # # # # # # # # # # # # # # # # # # # # # #
 
@@ -548,7 +634,7 @@ class ViewData:
             r_maj_list_indexes = [channel[0] for channel in sorted(chan_pos_order_buffer.items(), key=itemgetter(1))]
             r_maj_list = [channel[1] for channel in sorted(chan_pos_order_buffer.items(), key=itemgetter(1))]
             channel_order_list = {index: channel[0] for index, channel in enumerate(sorted(chan_pos_order_buffer.items(), key=itemgetter(1)))}
-            time_list = data.time_original
+            time_list = data.time
             """ Same vars in a.u. units """
             """ Ordering by R_maj """
             temperature_list_original = data.order_by_r_maj(temperature_list_original, chan_pos_order_buffer)
@@ -847,3 +933,36 @@ class ViewData:
                     '.png')
 
         return 1
+
+    @property
+    def psi_r(self):
+        return self.internal_psi_r
+
+    @psi_r.setter
+    def psi_r(self, value):
+        self.internal_psi_r = value
+
+    @property
+    def q_database(self):
+        return self.internal_q_database
+
+    @q_database.setter
+    def q_database(self, value):
+        self.internal_q_database = value
+
+    @property
+    def shots(self):
+        return self.internal_shots
+
+    @shots.setter
+    def shots(self, value):
+        self.internal_shots = value
+
+    @property
+    def input_parameters(self):
+        return self.internal_input_parameters
+
+    @input_parameters.setter
+    def input_parameters(self, value):
+        self.internal_input_parameters = value
+

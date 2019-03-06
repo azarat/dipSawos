@@ -9,9 +9,11 @@ import matplotlib.pyplot as plt
 
 class Controller:
     internal_shots = 0
-    internal_time_original = 0
+    internal_time = 0
     internal_temperature_original = 0
     internal_channels_pos = 0
+    internal_psi_r = 0
+    internal_q_database = 0
 
     win_list_names = [
         'triang',  # minimum info save
@@ -21,16 +23,41 @@ class Controller:
         'bartlett', 'parzen', 'bohman', 'nuttall', 'barthann'
     ]
 
-    def load(self, discharge, source):
-        db = db_model.LoadDB(discharge, source)
+    database = db_model.LoadDB()
 
-        # self.channels_pos = db.channels_model
-        self.channels_pos = db.channels
-        self.time_original = db.time
-        self.shots = db.shots
-        self.temperature_original = db.temperature
+    def load(self):
+        """ -----------------------------------------
+             version: 0.10
+             desc: load matlab DB (model trigger)
+         ----------------------------------------- """
+        sawdata = self.database.load()
+        self.shots = self.database.shots
+
+        return sawdata
+
+    def assign(self, database, discharge, source):
+        """ -----------------------------------------
+             version: 0.10
+             desc: assign data from loaded DB (model trigger)
+         ----------------------------------------- """
+
+        self.database.assign(database, discharge, source)
+
+        self.channels_pos = self.database.channels
+        self.time = self.database.time
+        self.temperature_original = self.database.temperature
+        self.psi_r= self.database.psi_r
+        self.q_database= self.database.q_database
 
         return 1
+
+    @property
+    def q_database(self):
+        return self.internal_q_database
+
+    @q_database.setter
+    def q_database(self, value):
+        self.internal_q_database = value
 
     @property
     def shots(self):
@@ -41,12 +68,20 @@ class Controller:
         self.internal_shots = value
 
     @property
-    def time_original(self):
-        return self.internal_time_original
+    def psi_r(self):
+        return self.internal_psi_r
 
-    @time_original.setter
-    def time_original(self, value):
-        self.internal_time_original = value
+    @psi_r.setter
+    def psi_r(self, value):
+        self.internal_psi_r = value
+
+    @property
+    def time(self):
+        return self.internal_time
+
+    @time.setter
+    def time(self, value):
+        self.internal_time = value
 
     @property
     def temperature_original(self):
@@ -453,23 +488,23 @@ class FindCollapseDuration:
         ##########################################
 
         """ DEBUG ploting etc. """
-        # print(sigma_left)
-        prototype = temperature_list[work_index]
-        prototype = prototype / np.mean(prototype[:500])
-
-        window = signal_processor.get_window('triang', smooth_window)
-        prototype_smooth = signal_processor.convolve(temperature_list[work_index], window, mode='valid')
-        prototype_smooth = prototype_smooth / np.mean(prototype_smooth[:500])
-
-        ax[1, 0].plot(prototype_smooth)
-        ax[1, 1].plot(prototype[(step_backward+smooth_window_offset):])
-        ax[1, 1].plot([level for x in correlator])
-        ax[1, 1].plot(correlator)
-
-        peaks, _ = find_peaks(correlator, prominence=(height / 1.5))
-        correlator = np.asarray(correlator)
-        plt.plot(correlator)
-        plt.plot(peaks, correlator[peaks], "x")
+        # # print(sigma_left)
+        # prototype = temperature_list[work_index]
+        # prototype = prototype / np.mean(prototype[:500])
+        #
+        # window = signal_processor.get_window('triang', smooth_window)
+        # prototype_smooth = signal_processor.convolve(temperature_list[work_index], window, mode='valid')
+        # prototype_smooth = prototype_smooth / np.mean(prototype_smooth[:500])
+        #
+        # ax[1, 0].plot(prototype_smooth)
+        # ax[1, 1].plot(prototype[(step_backward+smooth_window_offset):])
+        # ax[1, 1].plot([level for x in correlator])
+        # ax[1, 1].plot(correlator)
+        #
+        # peaks, _ = find_peaks(correlator, prominence=(height / 1.5))
+        # correlator = np.asarray(correlator)
+        # plt.plot(correlator)
+        # plt.plot(peaks, correlator[peaks], "x")
         ##########################################
 
         start = sigma_left + step_backward + smooth_window_offset - step_backward_offset
