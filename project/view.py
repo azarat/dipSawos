@@ -158,8 +158,9 @@ class ViewData:
             results.append(result)
 
             print("--------------------------------------COMPLETE")
-            print("")
+            print("\n\n\n")
 
+        print('------Write results into file------')
         if self.close_plots == 0:
             plt.show()
         else:
